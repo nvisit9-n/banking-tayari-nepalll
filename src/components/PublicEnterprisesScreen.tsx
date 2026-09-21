@@ -264,10 +264,31 @@ export const PublicEnterprisesScreen: React.FC = () => {
   return (
     <div className="space-y-6 pb-12 animate-fadeIn">
 
+      {/* STANDARDIZED BREADCRUMBS (13px Muted Slate #64748B) */}
+      <nav aria-label="Breadcrumbs" className="flex items-center gap-2 text-[13px] text-[#64748B] dark:text-slate-400">
+        <span>गृहपृष्ठ</span>
+        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <span>वस्तुगत परीक्षा (MCQ)</span>
+        <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <span className="font-semibold text-[#0F172A] dark:text-white">५० Pre-Test सेटहरू</span>
+      </nav>
+
+      {/* PRIMARY HEADER: 28px Bold, High-Contrast Navy/Slate (#0F172A) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#E2E8F0] dark:border-slate-800">
+        <div>
+          <h1 className="text-[24px] sm:text-[28px] font-bold text-[#0F172A] dark:text-white leading-tight tracking-tight">
+            संगठित संस्था Pre-Test ५० पूर्ण सेटहरू
+          </h1>
+          <p className="text-[13px] text-[#64748B] dark:text-slate-400 mt-1 leading-relaxed">
+            लोक सेवा आयोग आधिकारिक पाठ्यक्रम ढाँचा: ५० वटै पूर्ण परीक्षा सेटहरू, द्विभाषी प्रश्नोत्तर र नेगेटिभ मार्किङ सहित।
+          </p>
+        </div>
+      </div>
+
       {/* TOP SUB-CATEGORY SWITCHER: संगठित संस्था, बैंकिङ्ग, लोकसेवा */}
       <div 
         id="screen-subcategory-nav"
-        className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-1.5 bg-slate-100/90 dark:bg-slate-800/80 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs"
+        className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 p-1.5 bg-slate-100/90 dark:bg-slate-800/80 rounded-2xl border border-[#E2E8F0] dark:border-slate-700 shadow-2xs"
       >
         {/* 1. संगठित संस्था Pre-Test */}
         <button
@@ -276,18 +297,18 @@ export const PublicEnterprisesScreen: React.FC = () => {
           onClick={() => selectQuizSubCategory('sangathit')}
           className={`p-3 rounded-xl flex items-center justify-between text-xs sm:text-sm font-bold transition-all cursor-pointer ${
             quizSubCategory === 'sangathit'
-              ? 'bg-[#0B2046] text-white shadow-md'
+              ? 'bg-[#0F172A] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700/60'
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <Building2 className={`w-4 h-4 shrink-0 ${quizSubCategory === 'sangathit' ? 'text-red-400' : 'text-blue-600'}`} />
+            <Building2 className={`w-4 h-4 shrink-0 ${quizSubCategory === 'sangathit' ? 'text-sky-400' : 'text-slate-600 dark:text-slate-400'}`} />
             <div className="text-left truncate">
-              <p className="truncate font-black">१. संगठित संस्था Pre-Test</p>
-              <p className="text-[10px] opacity-80 font-normal">Public Enterprises Pre-Test</p>
+              <p className="truncate font-bold text-sm">१. संगठित संस्था Pre-Test</p>
+              <p className="text-[13px] opacity-80 font-normal text-slate-300 dark:text-slate-400">Public Enterprises Pre-Test</p>
             </div>
           </div>
-          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-red-600 text-white shrink-0">५० सेट</span>
+          <span className="text-[13px] font-mono font-medium px-2 py-0.5 rounded-full bg-slate-800 text-sky-300 border border-slate-700 shrink-0">५० सेट</span>
         </button>
 
         {/* 2. बैंकिङ्ग परीक्षा तयारी */}
@@ -297,18 +318,18 @@ export const PublicEnterprisesScreen: React.FC = () => {
           onClick={() => selectQuizSubCategory('banking')}
           className={`p-3 rounded-xl flex items-center justify-between text-xs sm:text-sm font-bold transition-all cursor-pointer ${
             quizSubCategory === 'banking'
-              ? 'bg-emerald-700 text-white shadow-md'
+              ? 'bg-[#0F172A] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700/60'
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <Landmark className={`w-4 h-4 shrink-0 ${quizSubCategory === 'banking' ? 'text-emerald-300' : 'text-emerald-600'}`} />
+            <Landmark className={`w-4 h-4 shrink-0 ${quizSubCategory === 'banking' ? 'text-emerald-400' : 'text-slate-600 dark:text-slate-400'}`} />
             <div className="text-left truncate">
-              <p className="truncate font-black">२. बैंकिङ्ग परीक्षा तयारी</p>
-              <p className="text-[10px] opacity-80 font-normal">NRB • NBL • RBB • ADBL</p>
+              <p className="truncate font-bold text-sm">२. बैंकिङ्ग परीक्षा तयारी</p>
+              <p className="text-[13px] opacity-80 font-normal text-slate-300 dark:text-slate-400">NRB • NBL • RBB • ADBL</p>
             </div>
           </div>
-          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white shrink-0">४ बैंक</span>
+          <span className="text-[13px] font-mono font-medium px-2 py-0.5 rounded-full bg-slate-800 text-emerald-300 border border-slate-700 shrink-0">४ बैंक</span>
         </button>
 
         {/* 3. निजामती/लोकसेवा तयारी */}
@@ -318,86 +339,55 @@ export const PublicEnterprisesScreen: React.FC = () => {
           onClick={() => selectQuizSubCategory('loksewa')}
           className={`p-3 rounded-xl flex items-center justify-between text-xs sm:text-sm font-bold transition-all cursor-pointer ${
             quizSubCategory === 'loksewa'
-              ? 'bg-amber-700 text-white shadow-md'
+              ? 'bg-[#0F172A] text-white shadow-md'
               : 'text-slate-600 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700/60'
           }`}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <Scale className={`w-4 h-4 shrink-0 ${quizSubCategory === 'loksewa' ? 'text-amber-300' : 'text-amber-600'}`} />
+            <Scale className={`w-4 h-4 shrink-0 ${quizSubCategory === 'loksewa' ? 'text-amber-400' : 'text-slate-600 dark:text-slate-400'}`} />
             <div className="text-left truncate">
-              <p className="truncate font-black">३. निजामती/लोकसेवा तयारी</p>
-              <p className="text-[10px] opacity-80 font-normal">अधिकृत • नासु • खरिदार</p>
+              <p className="truncate font-bold text-sm">३. निजामती/लोकसेवा तयारी</p>
+              <p className="text-[13px] opacity-80 font-normal text-slate-300 dark:text-slate-400">अधिकृत • नासु • खरिदार</p>
             </div>
           </div>
-          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-600 text-white shrink-0">PSC</span>
+          <span className="text-[13px] font-mono font-medium px-2 py-0.5 rounded-full bg-slate-800 text-amber-300 border border-slate-700 shrink-0">PSC</span>
         </button>
       </div>
       
-      {/* Dynamic Hero Banner for active Category */}
-      <div className={`relative overflow-hidden rounded-3xl bg-gradient-to-r ${subCategoryConfig.gradient} text-white p-6 sm:p-8 shadow-xl`}>
-        <div className="relative z-10 space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider ${subCategoryConfig.badgeBg} text-white shadow-sm flex items-center gap-1.5`}>
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>{subCategoryConfig.badge}</span>
-            </span>
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-white/15 text-white border border-white/25">
-              {subCategoryConfig.targetPill}
-            </span>
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/30 text-emerald-200 border border-emerald-400/30">
-              २,५०० वस्तुगत प्रश्नहरू
-            </span>
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/30 text-amber-200 border border-amber-400/30">
-              ४५ मिनेट • १०० पूर्णाङ्क
-            </span>
-          </div>
-
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-            <div className="space-y-2 max-w-3xl">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-2xl bg-white/15 backdrop-blur-md border border-white/30 text-white shadow-inner shrink-0">
-                  <HeaderIcon className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
-                    {subCategoryConfig.title}
-                  </h1>
-                  <p className="text-sm font-semibold text-blue-200">
-                    {subCategoryConfig.englishTitle} • लोक सेवा आयोग आधिकारिक पाठ्यक्रम ढाँचा
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-xs sm:text-sm text-blue-100 leading-relaxed pt-1">
-                {subCategoryConfig.description}
+      {/* COMPACT HERO BANNER & SINGLE HIGH-CONTRAST CTA FOCAL POINT (Max 120px-140px, Zero Clutter Tags) */}
+      <div className="relative overflow-hidden rounded-2xl bg-[#0F172A] text-white p-4 sm:px-6 sm:py-5 min-h-[120px] max-h-[140px] flex items-center justify-between border border-slate-800 shadow-sm">
+        {/* Visual Flow: Title -> Description */}
+        <div className="relative z-10 space-y-1 max-w-2xl">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-slate-800 text-sky-400 border border-slate-700 shrink-0 hidden sm:flex">
+              <HeaderIcon className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white leading-tight">
+                {subCategoryConfig.title}
+              </h2>
+              <p className="text-[13px] font-medium text-sky-300/90 truncate">
+                {subCategoryConfig.englishTitle}
               </p>
             </div>
-
-            <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleLaunchSet(1)}
-                className="px-6 py-3.5 rounded-2xl bg-[#DC2626] hover:bg-[#B91C1C] text-white font-black text-sm flex items-center justify-center gap-2.5 shadow-lg shadow-blue-950/40 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
-              >
-                <Play className="w-4 h-4 fill-white" />
-                <span>सेट १ सुरु गर्नुहोस् (Start Set 1)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveView(activeView === 'syllabus' ? 'sets' : 'syllabus')}
-                className="px-5 py-2.5 rounded-2xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs flex items-center justify-center gap-2 border border-white/30 transition cursor-pointer backdrop-blur-sm"
-              >
-                <Layers className="w-4 h-4 text-white" />
-                <span>{activeView === 'syllabus' ? 'सेटहरूमा फर्कनुहोस्' : 'पाठ्यक्रम ढाँचा (Syllabus)'}</span>
-              </button>
-            </div>
           </div>
+          <p className="text-[13px] text-slate-300 leading-snug line-clamp-1 sm:line-clamp-2 max-w-xl">
+            {subCategoryConfig.description}
+          </p>
         </div>
 
-        {/* Subtle ambient decorative shapes */}
-        <div className="absolute -right-16 -bottom-16 w-64 h-64 bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -left-12 -top-12 w-48 h-48 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+        {/* Single High-Contrast Focal Action Button */}
+        <div className="relative z-10 shrink-0 pl-4">
+          <button
+            type="button"
+            id="hero-btn-start-set-1"
+            onClick={() => handleLaunchSet(1)}
+            className="px-5 py-2.5 sm:px-6 sm:py-3 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] active:scale-95 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition cursor-pointer whitespace-nowrap"
+          >
+            <Play className="w-4 h-4 fill-white" />
+            <span>सेट १ सुरु गर्नुहोस् (Start Set 1)</span>
+          </button>
+        </div>
       </div>
 
       {/* Main View Switcher Tabs */}
@@ -448,21 +438,21 @@ export const PublicEnterprisesScreen: React.FC = () => {
         <div className="space-y-6">
           
           {/* Master Banner: View-Only Online Practice for Students, Admin PDF Export for Owner */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-[#0F2942] via-slate-900 to-[#0F2942] text-white border border-blue-900/60 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="p-4 sm:p-5 rounded-2xl bg-[#0F172A] text-white border border-slate-800 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-3.5">
-              <div className="p-3 rounded-2xl bg-[#E63946] text-white shadow-md shrink-0">
-                <Building2 className="w-6 h-6" />
+              <div className="p-2.5 rounded-xl bg-slate-800 text-sky-400 border border-slate-700 shrink-0">
+                <Building2 className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm sm:text-base font-black text-white">
+                  <h3 className="text-[18px] font-semibold text-white leading-tight">
                     {isAdmin ? '५० Pre-Test सेटहरू • व्यवस्थापक PDF एक्सपोर्ट' : '५० Pre-Test सेटहरू • अनलाइन इन्टरएक्टिभ अभ्यास मोड'}
                   </h3>
-                  <span className="px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-mono font-bold">
-                    {isAdmin ? 'Admin Mode (nvisit9@gmail.com)' : '५० सेट • २,५०० MCQs • View-Only Mode'}
+                  <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-sky-300 text-[11px] font-mono">
+                    {isAdmin ? 'Admin Mode (nvisit9@gmail.com)' : '५० सेट • २,५०० MCQs'}
                   </span>
                 </div>
-                <p className="text-xs text-blue-200 mt-1 max-w-xl">
+                <p className="text-[13px] text-slate-300 mt-1 max-w-xl leading-relaxed">
                   {isAdmin 
                     ? '१० पाठ्यक्रम मोड्युल, द्विभाषी प्रश्नोत्तर, वाटरमार्क, आधिकारिक हेडर र पूर्ण उत्तरकुञ्जी सहित A4 ढाँचामा तत्काल प्रिन्ट वा सेभ गर्नुहोस्।'
                     : '१० पाठ्यक्रम मोड्युल, द्विभाषी प्रश्नोत्तर, नेगेटिभ मार्किङ (-०.४ अङ्क) र तत्काल नतिजा विश्लेषण सहित पूर्ण अनलाइन अभ्यास गर्नुहोस्।'}
@@ -470,7 +460,7 @@ export const PublicEnterprisesScreen: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+            <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto shrink-0">
               {isAdmin ? (
                 <>
                   <button
@@ -480,7 +470,7 @@ export const PublicEnterprisesScreen: React.FC = () => {
                       setPdfScope('all-50-sets');
                       setIsPdfDialogOpen(true);
                     }}
-                    className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-[#E63946] hover:bg-[#C8102E] text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition cursor-pointer active:scale-95 whitespace-nowrap"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition cursor-pointer active:scale-95 whitespace-nowrap"
                   >
                     <FileDown className="w-4 h-4" />
                     <span>५० Pre-Test सेटहरू PDF</span>
@@ -493,10 +483,10 @@ export const PublicEnterprisesScreen: React.FC = () => {
                       setPdfScope('all-10k');
                       setIsPdfDialogOpen(true);
                     }}
-                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 border border-white/20 transition cursor-pointer whitespace-nowrap"
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs flex items-center justify-center gap-2 border border-slate-700 transition cursor-pointer whitespace-nowrap"
                     title="१०,०००+ प्रश्न भण्डार PDF डाउनलोड गर्नुहोस्"
                   >
-                    <Printer className="w-4 h-4 text-amber-300" />
+                    <Printer className="w-4 h-4 text-amber-400" />
                     <span>१०,०००+ प्रश्न भण्डार PDF</span>
                   </button>
                 </>
@@ -505,7 +495,7 @@ export const PublicEnterprisesScreen: React.FC = () => {
                   type="button"
                   id="btn-start-online-practice-banner"
                   onClick={() => handleLaunchSet(1)}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md transition cursor-pointer active:scale-95 whitespace-nowrap"
+                  className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm transition cursor-pointer active:scale-95 whitespace-nowrap"
                 >
                   <Play className="w-4 h-4 fill-white" />
                   <span>अनलाइन अभ्यास सुरु गर्नुहोस् (सेट १)</span>
@@ -645,8 +635,8 @@ export const PublicEnterprisesScreen: React.FC = () => {
             </div>
           </div>
 
-          {/* 50 SETS RESPONSIVE GRID */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* 50 SETS RESPONSIVE GRID (Standard 24px Gap, Consistent 1px #E2E8F0 Borders) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSets.map((set) => {
               const isEasy = set.setNumber <= 15;
               const isMedium = set.setNumber > 15 && set.setNumber <= 35;
@@ -664,79 +654,71 @@ export const PublicEnterprisesScreen: React.FC = () => {
               return (
                 <div
                   key={set.id}
-                  className="bg-white dark:bg-slate-900 rounded-3xl p-5 border border-slate-200 dark:border-slate-800 hover:border-blue-500/60 dark:hover:border-blue-500/50 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group"
+                  className="bg-white dark:bg-[#0F172A] rounded-2xl p-5 sm:p-6 border border-[#E2E8F0] dark:border-slate-800 hover:border-sky-400/80 dark:hover:border-sky-500/80 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between h-full group"
                 >
                   <div className="space-y-3">
                     {/* Header line with Set Number Badge, Category/Institute Badge and Difficulty */}
-                    <div className="flex items-center justify-between gap-1 flex-wrap">
+                    <div className="flex items-center justify-between gap-1.5 flex-wrap">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className={`px-2.5 py-1 rounded-xl text-white font-mono font-black text-xs shadow-xs ${
-                          isBanking ? 'bg-emerald-600' : isLoksewa ? 'bg-amber-600' : 'bg-blue-600'
-                        }`}>
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono font-bold text-[13px]">
                           सेट {set.setNumber}
                         </span>
 
                         {isBanking ? (
-                          <span className="px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#64748B] dark:text-slate-400 text-[13px] font-medium">
                             {set.instituteTag === 'NRB' ? 'राष्ट्र बैंक (NRB)' : set.instituteTag === 'RBB' ? 'रा.वा. बैंक (RBB)' : set.instituteTag === 'NBL' ? 'नेपाल बैंक (NBL)' : 'कृषि बैंक (ADBL)'}
                           </span>
                         ) : isLoksewa ? (
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 text-[11px] font-bold">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[#64748B] dark:text-slate-400 text-[13px] font-medium">
                             {set.setNumber % 3 === 1 ? 'शाखा अधिकृत' : set.setNumber % 3 === 2 ? 'नायब सुब्बा' : 'खरिदार'}
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                          <span className="px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-[13px] font-medium text-[#64748B] dark:text-slate-400">
                             {set.targetLevel}
                           </span>
                         )}
                       </div>
 
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${
-                        isEasy 
-                          ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400' 
-                          : isMedium 
-                            ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400' 
-                            : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400'
-                      }`}>
+                      <span className="text-[13px] font-medium text-[#64748B] dark:text-slate-400">
                         {set.difficulty}
                       </span>
                     </div>
 
-                    {/* Title */}
+                    {/* Title: 18px Semi-Bold (#1E293B) */}
                     <div>
-                      <h3 className="font-black text-base text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1">
+                      <h3 className="text-[18px] font-semibold text-[#1E293B] dark:text-slate-100 group-hover:text-sky-600 dark:group-hover:text-sky-400 transition-colors line-clamp-1">
                         {cardTitle}
                       </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1 leading-relaxed">
+                      <p className="text-[13px] text-[#64748B] dark:text-slate-400 line-clamp-2 mt-1.5 leading-relaxed">
                         {set.description}
                       </p>
                     </div>
 
                     {/* Set Specifications */}
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-[11px]">
+                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[#E2E8F0] dark:border-slate-800 text-[13px]">
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-center">
-                        <span className="block text-slate-400 text-[10px]">प्रश्न संख्या</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">५० MCQs</span>
+                        <span className="block text-[#64748B] text-[11px]">प्रश्न संख्या</span>
+                        <span className="text-[13px] font-medium text-[#1E293B] dark:text-slate-200">५० MCQs</span>
                       </div>
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-center">
-                        <span className="block text-slate-400 text-[10px]">समय सीमा</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">४५ मिनेट</span>
+                        <span className="block text-[#64748B] text-[11px]">समय सीमा</span>
+                        <span className="text-[13px] font-medium text-[#1E293B] dark:text-slate-200">४५ मिनेट</span>
                       </div>
                       <div className="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl text-center">
-                        <span className="block text-slate-400 text-[10px]">पूर्णाङ्क</span>
-                        <span className="font-bold text-slate-800 dark:text-slate-200">१०० अङ्क</span>
+                        <span className="block text-[#64748B] text-[11px]">पूर्णाङ्क</span>
+                        <span className="text-[13px] font-medium text-[#1E293B] dark:text-slate-200">१०० अङ्क</span>
                       </div>
                     </div>
 
                     {/* Question breakdown pill */}
-                    <div className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-[11px] text-blue-700 dark:text-blue-300 font-semibold flex items-center justify-between">
+                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-[#E2E8F0] dark:border-slate-800 text-[13px] text-[#64748B] dark:text-slate-400 flex items-center justify-between">
                       <span>ढाँचा: ४५ Bilingual + ३ Eng + २ Nep</span>
-                      <span className="text-[10px] text-red-600 font-mono font-bold">-०.४ अङ्क/गलत</span>
+                      <span className="text-[13px] text-red-600 dark:text-red-400 font-medium">-०.४ अङ्क/गलत</span>
                     </div>
                   </div>
 
-                  {/* CTA Button & Individual Set PDF (Admin Only) */}
-                  <div className="pt-4 mt-2 flex items-center gap-2">
+                  {/* Matching Action Buttons Anchored to Bottom Across All Cards */}
+                  <div className="mt-auto pt-4 border-t border-[#E2E8F0] dark:border-slate-800/80 flex items-center gap-2.5">
                     {isAdmin && (
                       <button
                         type="button"
@@ -746,7 +728,7 @@ export const PublicEnterprisesScreen: React.FC = () => {
                           setPdfSetNum(set.setNumber);
                           setIsPdfDialogOpen(true);
                         }}
-                        className="py-3 px-3.5 rounded-2xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        className="py-2.5 px-3 rounded-xl border border-[#E2E8F0] dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-[#1E293B] dark:text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer"
                         title={`सेट ${set.setNumber} A4 PDF डाउनलोड (व्यवस्थापक)`}
                       >
                         <Download className="w-4 h-4 text-red-500" />
@@ -757,18 +739,10 @@ export const PublicEnterprisesScreen: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleLaunchSet(set.setNumber)}
-                      className={`flex-1 py-3 rounded-2xl text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95 cursor-pointer ${
-                        isBanking
-                          ? 'bg-slate-900 dark:bg-slate-800 hover:bg-emerald-600 dark:hover:bg-emerald-600 group-hover:bg-emerald-600'
-                          : isLoksewa
-                            ? 'bg-slate-900 dark:bg-slate-800 hover:bg-amber-600 dark:hover:bg-amber-600 group-hover:bg-amber-600'
-                            : 'bg-slate-900 dark:bg-slate-800 hover:bg-[#DC2626] dark:hover:bg-[#DC2626] group-hover:bg-[#DC2626]'
-                      }`}
+                      className="flex-1 py-2.5 px-4 rounded-xl text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 bg-[#0F172A] dark:bg-slate-800 hover:bg-sky-600 dark:hover:bg-sky-600 active:scale-98 transition-all cursor-pointer shadow-2xs"
                     >
                       <Play className="w-4 h-4 fill-white" />
-                      <span>
-                        {isBanking ? 'सेट सुरु गर्नुहोस्' : isLoksewa ? 'सेट सुरु गर्नुहोस्' : 'सेट सुरु गर्नुहोस्'}
-                      </span>
+                      <span>सेट सुरु गर्नुहोस्</span>
                     </button>
                   </div>
                 </div>

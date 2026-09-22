@@ -121,13 +121,17 @@ export const AiAssistantModal: React.FC = () => {
     messageId: null
   });
 
-  // Audio Transcription STT (gemini-3.5-transcribe) - Fixes speech duplication
+  // Voice-to-Text: Controlled State Buffer & Single Session-End Flush
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [speechLanguage, setSpeechLanguage] = useState<'ne-NP' | 'en-US'>('ne-NP');
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
+  const [interimSpeechBuffer, setInterimSpeechBuffer] = useState<string>('');
 
+  const speechBufferRef = useRef<string>('');
+  const sessionFlushedRef = useRef<boolean>(false);
+  const recognitionRef = useRef<any>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
@@ -150,6 +154,13 @@ export const AiAssistantModal: React.FC = () => {
   useEffect(() => {
     return () => {
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         try {
           mediaRecorderRef.current.stop();
@@ -257,18 +268,113 @@ export const AiAssistantModal: React.FC = () => {
     await AiChatSessionService.deleteSession(sessionId, activeUid);
   };
 
-  // STT Engine Overhaul: Gemini 3.5 Transcribe replacing Web Speech API to completely fix repetition
+  // Voice-to-Text: Controlled State Buffer with Single Session-End Flush
   const handleToggleSpeech = async () => {
     if (isRecording) {
-      // User tapped mic to stop recording
+      // Stop ongoing speech recognition session
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // ignore
+        }
       }
       if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
       setIsRecording(false);
       return;
     }
 
+    // Reset controlled state buffer for this new session
+    speechBufferRef.current = '';
+    sessionFlushedRef.current = false;
+    setInterimSpeechBuffer('');
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    // 1. Browser Speech Recognition with Controlled State Buffer
+    if (SpeechRec) {
+      try {
+        const recognition = new SpeechRec();
+        recognition.lang = speechLanguage;
+        recognition.interimResults = true;
+        recognition.continuous = false;
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => {
+          setIsRecording(true);
+          setRecordingSeconds(0);
+          setSpeechNotice(speechLanguage === 'ne-NP' ? '🔴 आवाज सुन्दैछ... स्पष्ट बोल्नुहोस्' : '🔴 Listening... speak clearly');
+        };
+
+        // Controlled State Buffer: Accumulate incoming speech without mutating inputQuery during stream
+        recognition.onresult = (event: any) => {
+          let finalChunk = '';
+          let interimChunk = '';
+          for (let i = 0; i < event.results.length; ++i) {
+            const item = event.results[i];
+            if (item.isFinal) {
+              finalChunk += item[0].transcript + ' ';
+            } else {
+              interimChunk += item[0].transcript;
+            }
+          }
+          const accumulated = (finalChunk + interimChunk).trim();
+          speechBufferRef.current = accumulated;
+          setInterimSpeechBuffer(accumulated);
+          setSpeechNotice(`🔴 सुन्दैछ: "${accumulated}"`);
+        };
+
+        recognition.onerror = (event: any) => {
+          console.warn('Speech recognition notice:', event.error);
+          setIsRecording(false);
+          setInterimSpeechBuffer('');
+          setSpeechNotice(`आवाज पहिचान त्रुटि (${event.error || 'पुनः प्रयास गर्नुहोस्'})`);
+          setTimeout(() => setSpeechNotice(null), 3000);
+        };
+
+        // Flush the recognition result into the input state ONLY ONCE per session-end
+        recognition.onend = () => {
+          setIsRecording(false);
+          setInterimSpeechBuffer('');
+
+          if (!sessionFlushedRef.current) {
+            sessionFlushedRef.current = true;
+            const finalResult = speechBufferRef.current.trim();
+            if (finalResult) {
+              setInputQuery(prev => {
+                const prevTrimmed = (prev || '').trim();
+                if (!prevTrimmed) return finalResult;
+                // Prevent duplicate repetition of identical trailing fragments
+                if (prevTrimmed.endsWith(finalResult) || prevTrimmed === finalResult) {
+                  return prevTrimmed;
+                }
+                return `${prevTrimmed} ${finalResult}`;
+              });
+              setSpeechNotice('✅ आवाज रूपान्तरण भयो');
+              setTimeout(() => setSpeechNotice(null), 2500);
+            } else {
+              setSpeechNotice(null);
+            }
+            speechBufferRef.current = '';
+          }
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+        return;
+      } catch (err) {
+        console.warn('SpeechRecognition failed, falling back to MediaRecorder:', err);
+      }
+    }
+
+    // 2. High-Fidelity Audio Buffer Fallback (gemini-3.5-transcribe)
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setSpeechNotice('तपाईंको ब्राउजरमा माइक्रोफोन सुविधा उपलब्ध छैन।');
       setTimeout(() => setSpeechNotice(null), 4000);
@@ -291,7 +397,6 @@ export const AiAssistantModal: React.FC = () => {
       };
 
       mediaRecorder.onstop = async () => {
-        // Release audio hardware tracks
         stream.getTracks().forEach(t => t.stop());
 
         if (audioChunksRef.current.length === 0) {
@@ -306,15 +411,21 @@ export const AiAssistantModal: React.FC = () => {
 
         try {
           const transcribedText = await transcribeAudioWithGemini(audioBlob, speechLanguage);
-          if (transcribedText && transcribedText.trim()) {
-            // Clean 1-to-1 capture without repeated buffer concatenation
+          if (!sessionFlushedRef.current && transcribedText && transcribedText.trim()) {
+            sessionFlushedRef.current = true;
+            const cleanText = transcribedText.trim();
+            // Single flush on session-end
             setInputQuery(prev => {
               const prevTrimmed = (prev || '').trim();
-              return prevTrimmed ? `${prevTrimmed} ${transcribedText.trim()}` : transcribedText.trim();
+              if (!prevTrimmed) return cleanText;
+              if (prevTrimmed.endsWith(cleanText) || prevTrimmed === cleanText) {
+                return prevTrimmed;
+              }
+              return `${prevTrimmed} ${cleanText}`;
             });
             setSpeechNotice(`✅ आवाज रूपान्तरण भयो`);
             setTimeout(() => setSpeechNotice(null), 2500);
-          } else {
+          } else if (!transcribedText || !transcribedText.trim()) {
             setSpeechNotice('आवाज स्पष्ट भएन, कृपया फेरि बोल्नुहोस्।');
             setTimeout(() => setSpeechNotice(null), 3000);
           }
@@ -331,7 +442,7 @@ export const AiAssistantModal: React.FC = () => {
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
       setRecordingSeconds(0);
-      setSpeechNotice(speechLanguage === 'ne-NP' ? '🔴 आवाज रेकर्ड हुँदैछ... स्पष्ट बोल्नुहोस् (बन्द गर्न फेरि थिच्नुहोस्)' : '🔴 Recording... speak clearly (click to finish)');
+      setSpeechNotice(speechLanguage === 'ne-NP' ? '🔴 आवाज रेकर्ड हुँदैछ... स्पष्ट बोल्नुहोस्' : '🔴 Recording... speak clearly');
 
       recordingTimerRef.current = setInterval(() => {
         setRecordingSeconds(s => s + 1);
@@ -1293,45 +1404,62 @@ export const AiAssistantModal: React.FC = () => {
                 )}
               </button>
 
-              {/* Discrete, Elegant Deep Research Toggle Switch */}
-              <button
-                type="button"
-                onClick={() => setIsDeepResearchMode(prev => !prev)}
-                className={`h-10 px-2.5 sm:px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-xs ${
-                  isDeepResearchMode
-                    ? 'bg-sky-500/20 text-sky-400 border-sky-500/60 ring-1 ring-sky-500/40 shadow-xs'
-                    : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
-                }`}
-                title={
-                  isDeepResearchMode
-                    ? 'Deep Research सक्रिय: नेपालका ऐन, कानुन, दफा तथा विस्तृत अनुसन्धान मोड'
-                    : 'Deep Research निष्क्रिय: द्रुत, प्रत्यक्ष तथा जुनसुकै विषयमा तत्काल समाधान'
-                }
-              >
-                <Compass className={`w-3.5 h-3.5 ${isDeepResearchMode ? 'text-sky-400 animate-spin-slow' : 'text-slate-400'}`} />
-                <span className="hidden md:inline">
-                  {isDeepResearchMode ? 'Deep Research ON' : 'Deep Research'}
-                </span>
-              </button>
+              {/* Compound Input Text Field with Discrete Deep Research Toggle Icon INSIDE */}
+              <div className="relative flex-1 min-w-0 flex items-center">
+                <input
+                  id="ai-assistant-input"
+                  type="text"
+                  value={inputQuery}
+                  onChange={(e) => setInputQuery(e.target.value)}
+                  placeholder={
+                    attachedImages.length > 0
+                      ? `हस्तलिखित ${attachedImages.length} पाना उत्तरपुस्तिका मूल्याङ्कन निर्देशन...`
+                      : attachedPdf
+                      ? 'यस PDF दस्तावेज सम्बन्धी प्रश्न वा सारांश...'
+                      : (isDeepResearchMode
+                          ? 'ऐन, कानुन, दफा वा गहिरो अनुसन्धान (Deep Research ON)...'
+                          : 'सोध्नुहोस् वा बोलेर टाइप गर्नुहोस्...')
+                  }
+                  aria-label="आफ्नो प्रश्न यहाँ सोध्नुहोस्..."
+                  className={`w-full h-10 sm:h-11 pl-3.5 sm:pl-4 ${
+                    isDeepResearchMode ? 'pr-28 sm:pr-34' : 'pr-24 sm:pr-28'
+                  } rounded-xl bg-slate-900 border ${
+                    isDeepResearchMode
+                      ? 'border-sky-500/60 ring-1 ring-sky-500/30'
+                      : 'border-slate-700'
+                  } text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 transition`}
+                />
 
-              {/* Text Input */}
-              <input
-                id="ai-assistant-input"
-                type="text"
-                value={inputQuery}
-                onChange={(e) => setInputQuery(e.target.value)}
-                placeholder={
-                  attachedImages.length > 0
-                    ? `हस्तलिखित ${attachedImages.length} पाना उत्तरपुस्तिका मूल्याङ्कन निर्देशन...`
-                    : attachedPdf
-                    ? 'यस PDF दस्तावेज सम्बन्धी प्रश्न वा सारांश...'
-                    : (isDeepResearchMode
-                        ? 'ऐन, कानुन, दफा वा गहिरो अनुसन्धान सम्बन्धी प्रश्न...'
-                        : 'सोध्नुहोस् वा बोल्नुहोस् (Mic)...')
-                }
-                aria-label="आफ्नो प्रश्न यहाँ सोध्नुहोस्..."
-                className="flex-1 min-w-0 h-10 sm:h-11 px-3 sm:px-4 rounded-xl bg-slate-900 border border-slate-700 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 transition"
-              />
+                {/* Discrete, Modern Deep Research Mode Toggle Icon INSIDE the Input Bar */}
+                <button
+                  type="button"
+                  id="deep-research-toggle-inside"
+                  onClick={() => setIsDeepResearchMode(prev => !prev)}
+                  className={`absolute right-1 sm:right-1.5 h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer text-xs font-semibold ${
+                    isDeepResearchMode
+                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/50 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 border border-transparent'
+                  }`}
+                  title={
+                    isDeepResearchMode
+                      ? 'Deep Research सक्रिय: नेपालका ऐन, कानुन, दफा तथा विस्तृत अनुसन्धान मोड (बन्द गर्न थिच्नुहोस्)'
+                      : 'Deep Research निष्क्रिय: क्लिक गरी ऐन, कानुन र दफा विश्लेषण मोड सक्रिय गर्नुहोस्'
+                  }
+                  aria-label={isDeepResearchMode ? "Disable Deep Research Mode" : "Enable Deep Research Mode"}
+                >
+                  <Compass
+                    className={`w-3.5 h-3.5 ${
+                      isDeepResearchMode ? 'text-sky-400 animate-spin-slow' : 'text-slate-400'
+                    }`}
+                  />
+                  <span className="text-[10px] sm:text-[11px] select-none font-medium">
+                    {isDeepResearchMode ? 'Deep Research' : 'Deep Research'}
+                  </span>
+                  {isDeepResearchMode && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse shrink-0" />
+                  )}
+                </button>
+              </div>
 
               {/* Submit / Send Button */}
               <button

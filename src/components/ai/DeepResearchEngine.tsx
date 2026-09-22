@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Search,
   BookOpen,
+  Compass,
   Image as ImageIcon,
   AlertCircle
 } from 'lucide-react';
@@ -71,6 +72,11 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
   const [isListening, setIsListening] = useState(false);
   const [currentlySpeakingId, setCurrentlySpeakingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Controlled speech buffer & session-end single flush tracking
+  const [interimSpeechBuffer, setInterimSpeechBuffer] = useState('');
+  const speechBufferRef = useRef<string>('');
+  const sessionFlushedRef = useRef<boolean>(false);
 
   // References
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -180,7 +186,7 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
     setUploadedImages([]);
   };
 
-  // Speech-to-Text handler (Exact Speech Input)
+  // Speech-to-Text handler with Controlled State Buffer (flushes only once per session-end)
   const toggleSpeechRecognition = () => {
     const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRec) {
@@ -192,7 +198,11 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
     }
 
     if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.warn('Speech recognition stop warning:', e);
+      }
       setIsListening(false);
       return;
     }
@@ -204,18 +214,30 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
       recognition.continuous = false;
       recognition.maxAlternatives = 1;
 
+      // Initialize controlled buffer for new speech session
+      speechBufferRef.current = '';
+      sessionFlushedRef.current = false;
+      setInterimSpeechBuffer('');
+
       recognition.onstart = () => {
         setIsListening(true);
       };
 
+      // Controlled State Buffer: Accumulate transcripts WITHOUT mutating inputText directly
       recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          transcript += event.results[i][0].transcript;
+        let finalSegment = '';
+        let interimSegment = '';
+        for (let i = 0; i < event.results.length; ++i) {
+          const res = event.results[i];
+          if (res.isFinal) {
+            finalSegment += res[0].transcript + ' ';
+          } else {
+            interimSegment += res[0].transcript;
+          }
         }
-        if (transcript) {
-          setInputText(transcript);
-        }
+        const accumulated = (finalSegment + interimSegment).trim();
+        speechBufferRef.current = accumulated;
+        setInterimSpeechBuffer(accumulated);
       };
 
       recognition.onerror = (event: any) => {
@@ -223,8 +245,27 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
         setIsListening(false);
       };
 
+      // Prevent duplication by flushing the recognition result into the input state ONLY ONCE per session-end
       recognition.onend = () => {
         setIsListening(false);
+        setInterimSpeechBuffer('');
+
+        if (!sessionFlushedRef.current) {
+          sessionFlushedRef.current = true;
+          const cleanBuffer = speechBufferRef.current.trim();
+          if (cleanBuffer) {
+            setInputText(prev => {
+              const prevTrimmed = (prev || '').trim();
+              if (!prevTrimmed) return cleanBuffer;
+              // Prevent duplicating if already appended or matches the end
+              if (prevTrimmed.endsWith(cleanBuffer) || prevTrimmed === cleanBuffer) {
+                return prevTrimmed;
+              }
+              return `${prevTrimmed} ${cleanBuffer}`;
+            });
+          }
+          speechBufferRef.current = '';
+        }
       };
 
       recognitionRef.current = recognition;
@@ -232,6 +273,7 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
     } catch (err) {
       console.error('Speech recognition start failed:', err);
       setIsListening(false);
+      setInterimSpeechBuffer('');
     }
   };
 
@@ -787,17 +829,20 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
             <div ref={chatBottomRef} />
           </div>
 
-          {/* Active Speech Recognition Banner */}
+          {/* Active Speech Recognition Banner with Controlled State Buffer */}
           {isListening && (
             <div className="px-4 py-2 bg-red-500/10 border-t border-red-500/30 flex items-center justify-between text-xs text-red-600 dark:text-red-400 font-bold animate-pulse shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-                <span>{t.listeningStatus}</span>
+              <div className="flex items-center gap-2 truncate">
+                <span className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0"></span>
+                <span className="truncate">
+                  {t.listeningStatus}
+                  {interimSpeechBuffer ? `: "${interimSpeechBuffer}"` : ''}
+                </span>
               </div>
               <button
                 type="button"
                 onClick={toggleSpeechRecognition}
-                className="text-xs underline hover:text-red-700"
+                className="text-xs underline hover:text-red-700 shrink-0 ml-2"
               >
                 रोक्नुहोस् (Stop)
               </button>
@@ -827,16 +872,54 @@ export const DeepResearchEngine: React.FC<DeepResearchEngineProps> = ({
                 )}
               </button>
 
-              {/* Text Input Field */}
-              <input
-                type="text"
-                id="deep-research-input"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={t.inputPlaceholder}
-                className="flex-1 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white px-4 py-3 rounded-xl text-xs sm:text-sm border border-transparent focus:border-sky-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-hidden transition-all placeholder:text-slate-400"
-              />
+              {/* Compound Input Text Field with Discrete Toggle Icon INSIDE */}
+              <div className="relative flex-1 min-w-0 flex items-center">
+                <input
+                  type="text"
+                  id="deep-research-input"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={mode === 'deep' ? 'ऐन, कानुन, दफा वा विस्तृत अनुसन्धान...' : t.inputPlaceholder}
+                  className={`w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white pl-4 ${
+                    mode === 'deep' ? 'pr-32 sm:pr-36' : 'pr-28 sm:pr-32'
+                  } py-3 rounded-xl text-xs sm:text-sm border ${
+                    mode === 'deep'
+                      ? 'border-sky-500/50 dark:border-sky-500/50 ring-1 ring-sky-500/20'
+                      : 'border-transparent'
+                  } focus:border-sky-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-hidden transition-all placeholder:text-slate-400`}
+                />
+
+                {/* Discrete, Modern Toggle Icon INSIDE the Input Bar */}
+                <button
+                  type="button"
+                  id="deep-engine-mode-toggle"
+                  onClick={() => setMode(prev => prev === 'deep' ? 'eval' : 'deep')}
+                  className={`absolute right-1.5 sm:right-2 h-7 sm:h-8 px-2 sm:px-2.5 rounded-lg flex items-center gap-1.5 transition cursor-pointer text-xs font-semibold ${
+                    mode === 'deep'
+                      ? 'bg-sky-500/20 text-sky-600 dark:text-sky-300 border border-sky-500/40 shadow-xs'
+                      : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700/80 border border-transparent'
+                  }`}
+                  title={
+                    mode === 'deep'
+                      ? 'Deep Research सक्रिय: नेपालका ऐन, कानुन तथा दफा अनुसन्धान (क्लिक गरी स्विच गर्नुहोस्)'
+                      : 'Word Rank Evaluator सक्रिय: क्लिक गरी Deep Research मोडमा जानुहोस्'
+                  }
+                  aria-label="Toggle Deep Research Mode"
+                >
+                  <Compass
+                    className={`w-3.5 h-3.5 ${
+                      mode === 'deep' ? 'text-sky-500 animate-spin-slow' : 'text-slate-400'
+                    }`}
+                  />
+                  <span className="text-[10px] sm:text-[11px] select-none font-medium">
+                    {mode === 'deep' ? 'Deep Research' : 'Evaluator'}
+                  </span>
+                  {mode === 'deep' && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-sky-500 animate-pulse shrink-0" />
+                  )}
+                </button>
+              </div>
 
               {/* Send Button */}
               <button

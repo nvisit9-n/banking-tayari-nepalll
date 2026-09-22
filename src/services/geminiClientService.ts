@@ -188,11 +188,17 @@ async function streamDirectFromGemini(
   apiKey: string,
   options: StreamAiOptions
 ): Promise<string> {
-  const { query, history = [], attachment, level = 'level4-5', mode = 'general', onChunk, signal } = options;
-  const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+  const { query, history = [], attachment, level = 'level4-5', mode = 'general', isDeepResearch, onChunk, signal } = options;
+  const candidateModels = isDeepResearch
+    ? ['gemini-3.5-flash', 'gemini-3.8-flash']
+    : ['gemini-3.1-flash-lite', 'gemini-3.8-flash', 'gemini-flash-latest'];
+
+  const deepResearchInstructions = isDeepResearch ? `\n\n[DEEP RESEARCH & LEGAL/ACT ANALYSIS MODE ACTIVATED]:
+- तपाईं अहिले नेपाल लोकसेवा, बैंकिङ तथा संस्थान परीक्षाको आधिकारिक 'Deep Research Mode' मा हुनुहुन्छ।
+- नेपालको संविधान २०७२ का धाराहरू, नेपाल राष्ट्र बैंक ऐन २०५८ का दफाहरू, बैंक तथा वित्तीय संस्था सम्बन्धी ऐन २०७३ (BAFIA), सम्पत्ति शुद्धीकरण निवारण ऐन २०६४, कम्पनी ऐन २०६३, सार्वजनिक खरिद ऐन २०६३, र राष्ट्र बैंकका पछिल्ला एकीकृत निर्देशनहरू (Unified Directives १ देखि १५) का विशिष्ट दफा, उपदफा र नीतिगत बुँदाहरू अनिवार्य उद्धृत (Cite) गरी गहिरो, प्रमाणिक र प्राज्ञिक अनुसन्धानमूलक विश्लेषण दिनुहोस्।` : '';
 
   const systemPrompt = `You are an elite, highly authoritative AI Examination Mentor and Faculty for Nepal Loksewa, Banking (NRB, RBB, NBL, ADBL Levels 4-10), and Public Enterprises (EPF, CIT, SSF, NEA, NTC, NOC, 45+ entities), operating with official Gemini 1.5 Pro and ChatGPT-4o caliber.
-Exam Level context: ${level}. Mode: ${mode}.
+Exam Level context: ${level}. Mode: ${mode}.${deepResearchInstructions}
 
 MANDATORY BEHAVIORAL DIRECTIVES:
 1. ZERO TEMPLATE FORCING & DIRECT REASONING:

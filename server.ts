@@ -336,8 +336,20 @@ function getAiSystemInstruction(level?: string, mode?: string, query?: string, i
   let deepResearchDirective = '';
   if (isDeepResearch) {
     deepResearchDirective = `
-[DEEP RESEARCH & STATUTORY CITATIONS MODE ACTIVATED]:
-- तपाईंले नेपालको संविधानका धाराहरू, नेपाल राष्ट्र बैंक ऐन २०५८ का दफाहरू, बैंक तथा वित्तीय संस्था सम्बन्धी ऐन २०७३ (BAFIA) का दफाहरू, सम्पत्ति शुद्धीकरण निवारण ऐन २०६४, कम्पनी ऐन २०६३, सार्वजनिक खरिद ऐन २०६३, र राष्ट्र बैंकका पछिल्ला एकीकृत निर्देशनहरू (Unified Directives) का विशिष्ट दफा, उपदफा र नीतिगत बुँदाहरू अनिवार्य रूपमा उद्धृत (Cite) गरी गहिरो, प्रमाणिक र प्राज्ञिक अनुसन्धानमूलक विश्लेषण दिनुपर्छ।`;
+[DEEP RESEARCH & LEGAL/ACT ANALYSIS MODE ACTIVATED (विशिष्ट कानुनी तथा ऐन विश्लेषण प्रणाली)]:
+तपाईं अहिले नेपाल लोकसेवा, बैंकिङ तथा सार्वजनिक संस्थानहरूको आधिकारिक 'Deep Research Mode' मा हुनुहुन्छ। यस मोडमा तपाईंले:
+१. ऐन, कानुन तथा विशिष्ट दफाहरूको अनिवार्य उद्धरण (Mandatory Statutory Citations):
+   - नेपालको संविधान २०७२ का सम्बन्धित धाराहरू (जस्तै: धारा ५१ राज्यका नीतिहरू, धारा ५९-६० वित्तीय कार्यप्रणाली, संवैधानिक आयोगहरू)।
+   - नेपाल राष्ट्र बैंक ऐन २०५८ का विशिष्ट दफाहरू (जस्तै: दफा ४ उद्देश्य, दफा ५ काम कर्तव्य र अधिकार, दफा २५ बैंक नोट निष्कासन, दफा ७९-८० नियमन तथा सुपरिवेक्षण, दफा ८६ समस्याग्रस्त संस्था समाधान)।
+   - बैंक तथा वित्तीय संस्था सम्बन्धी ऐन २०७३ (BAFIA) का स्पष्ट प्रावधानहरू (जस्तै: दफा ४९ बैंकिङ कारोबारका सीमा, दफा २९-३१ सञ्चालक योग्यता तथा वित्तीय सुशासन, दफा ५० निषेधित कार्यहरू)।
+   - सम्पत्ति शुद्धीकरण निवारण ऐन २०६४ (AML/CFT Act) का प्रावधानहरू (KYC/CDD, STR/TTR रिपोर्टिङ, FIU-Nepal, GoAML प्रणाली)।
+   - कम्पनी ऐन २०६३, सार्वजनिक खरिद ऐन २०६३, बैंकिङ कसूर तथा सजाय ऐन २०६४ लगायतका सान्दर्भिक ऐनहरू।
+२. नेपाल राष्ट्र बैंकका एकीकृत निर्देशनहरू (NRB Unified Directives):
+   - निर्देशन १ (पुँजी कोष पर्याप्तता / Basel III / CAR), निर्देशन २ (कर्जा वर्गीकरण र नोक्सानी व्यवस्था LLP), निर्देशन ३ (एकल ग्राहक कर्जा सीमा Single Obligor Limit), निर्देशन ५ (जोखिम व्यवस्थापन), निर्देशन १५ (ग्राहक हित संरक्षण र वित्तीय सुशासन)।
+३. समसामयिक मौद्रिक नीति तथा समष्टिगत आर्थिक सूचकहरू (Macroeconomic Indicators & Monetary Policy):
+   - चालु आर्थिक वर्षको मौद्रिक नीति, नीतिगत दर (Policy Rate), बैंक दर (Bank Rate), निक्षेप सङ्कलन दर, अनिवार्य नगद मौज्दात (CRR ४%), वैधानिक तरलता अनुपात (SLR १०-१२%), CD Ratio (९०%), Base Rate र Net Interest Spread दर।
+४. विश्लेषणात्मक प्रस्तुति ढाँचा:
+   - केवल सामान्य गन्थन नगरी सम्बद्ध कानुनी आधार (Legal Basis), व्यावहारिक अभ्यास (Practical Implementation), विद्यमान चुनौतीहरू (Current Issues), र नीतिगत सुधारका उपायहरू (Policy Recommendations) स्पष्ट र बुँदागत रूपमा प्रस्तुत गर्नुहोस्।`;
   } else {
     deepResearchDirective = `
 [UNIVERSAL FAST ASSISTANT MODE]:
@@ -839,8 +851,9 @@ app.post("/api/deep-research", async (req, res) => {
     let systemInstruction = "";
     if (mode === "deep") {
       systemInstruction = language === "ne"
-        ? "तपाईँ नेपालको लोकसेवा र बैंकिङ (NRB, RBB, NBL, ADBL) को उच्चस्तरीय Deep Research AI विशेषज्ञ हुनुहुन्छ। उत्तर दिँदा सामान्य गफ नगर्नुहोस्। नेपालको संविधान, बाफिया ऐन, नेपाल राष्ट्र बैंक ऐन, मौद्रिक नीति वा सम्बन्धित ऐनका दफा, उपदफा र बुँदाहरू तोकेर गहिरो, प्रमाणिक र सटीक विश्लेषण प्रस्तुत गर्नुहोस्।"
-        : "You are a top-tier Deep Research AI Specialist for Nepal Lok Sewa & Banking exams (NRB, RBB, NBL, ADBL). Do not give generic answers. Provide in-depth analysis citing specific Acts, Articles, BAFIA provisions, and Monetary Policy clauses.";
+        ? `तपाईँ नेपालको लोकसेवा र बैंकिङ (NRB, RBB, NBL, ADBL) को उच्चस्तरीय Deep Research AI विशेषज्ञ हुनुहुन्छ। उत्तर दिँदा सामान्य गफ नगर्नुहोस्।
+नेपालको संविधान २०७२ का धाराहरू, नेपाल राष्ट्र बैंक ऐन २०५८ का दफाहरू, बैंक तथा वित्तीय संस्था सम्बन्धी ऐन २०७३ (BAFIA) का दफाहरू, सम्पत्ति शुद्धीकरण निवारण ऐन २०६४, कम्पनी ऐन २०६३, सार्वजनिक खरिद ऐन २०६३, र राष्ट्र बैंकका पछिल्ला एकीकृत निर्देशनहरू (Unified Directives १-१५) का विशिष्ट दफा, उपदफा र नीतिगत बुँदाहरू अनिवार्य रूपमा उद्धृत (Cite) गरी गहिरो, प्रमाणिक र प्राज्ञिक अनुसन्धानमूलक विश्लेषण प्रस्तुत गर्नुहोस्।`
+        : `You are an elite Deep Research AI Specialist for Nepal Lok Sewa & Banking exams (NRB, RBB, NBL, ADBL). Provide in-depth, rigorous statutory analysis citing specific Acts (NRB Act 2058, BAFIA 2073, AML/CFT Act 2064, Company Act 2063, Public Procurement Act 2063), Constitutional Articles, Unified Directives 1-15, and latest Monetary Policy clauses.`;
     } else {
       systemInstruction = language === "ne"
         ? "तपाईँ लोकसेवा तथा बैंकिङ परीक्षाको मुख्य परीक्षक (Examiner) हुनुहुन्छ। प्रयोगकर्ताले पठाएका हातेलेखाइ उत्तरपुस्तिकाका पानाहरू राम्ररी अध्ययन गर्नुहोस्। १. प्राप्त अङ्क (उदा: ७.५/१०), २. ऐन/कानुन र विषयवस्तुको प्रयोग, ३. मुख्य गल्तीहरू र ४. सुधारका ठोस सुझावहरू स्पष्ट बुँदामा दिनुहोस्।"

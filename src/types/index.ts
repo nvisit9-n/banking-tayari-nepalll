@@ -10,6 +10,7 @@ export type NavigationTab =
   | 'bookmarks' 
   | 'free-notes'
   | 'video-lectures'
+  | 'deep-research'
   | 'about'
   | 'admin';
 

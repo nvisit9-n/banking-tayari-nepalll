@@ -18,6 +18,7 @@ import { VideoLecturesScreen } from '../videos/VideoLecturesScreen';
 import { LeaderboardSection } from '../leaderboard/LeaderboardSection';
 import { AboutUsScreen } from '../about/AboutUsScreen';
 import { AdminAnalyticsDashboard } from '../admin/AdminAnalyticsDashboard';
+import { DeepResearchEngine } from '../ai/DeepResearchEngine';
 import { Footer } from './Footer';
 
 // Readers & Modals
@@ -89,6 +90,7 @@ export const AppLayout: React.FC<AppLayoutProps> = () => {
           {activeTab === 'bookmarks' && <BookmarksScreen />}
           {activeTab === 'profile' && <ProfileScreen />}
           {activeTab === 'leaderboard' && <LeaderboardSection currentUser={user} />}
+          {activeTab === 'deep-research' && <DeepResearchEngine />}
           {activeTab === 'about' && <AboutUsScreen />}
           {activeTab === 'admin' && <AdminAnalyticsDashboard />}
         </main>

@@ -696,6 +696,134 @@ app.post("/api/ai-assistant", async (req, res) => {
   }
 });
 
+// Lok Sewa & Banking Deep Research AI Engine endpoint
+app.post("/api/deep-research", async (req, res) => {
+  try {
+    const { query, mode = "deep", language = "ne", images = [] } = req.body || {};
+
+    let cleanQuery = typeof query === "string" ? query.trim() : "";
+    const uploadedImages: Array<{ mimeType: string; data: string }> = Array.isArray(images) ? images : [];
+
+    if (!cleanQuery && uploadedImages.length === 0) {
+      return res.status(400).json({ error: "Query or images required" });
+    }
+
+    let systemInstruction = "";
+    if (mode === "deep") {
+      systemInstruction = language === "ne"
+        ? "तपाईँ नेपालको लोकसेवा र बैंकिङ (NRB, RBB, NBL, ADBL) को उच्चस्तरीय Deep Research AI विशेषज्ञ हुनुहुन्छ। उत्तर दिँदा सामान्य गफ नगर्नुहोस्। नेपालको संविधान, बाफिया ऐन, नेपाल राष्ट्र बैंक ऐन, मौद्रिक नीति वा सम्बन्धित ऐनका दफा, उपदफा र बुँदाहरू तोकेर गहिरो, प्रमाणिक र सटीक विश्लेषण प्रस्तुत गर्नुहोस्।"
+        : "You are a top-tier Deep Research AI Specialist for Nepal Lok Sewa & Banking exams (NRB, RBB, NBL, ADBL). Do not give generic answers. Provide in-depth analysis citing specific Acts, Articles, BAFIA provisions, and Monetary Policy clauses.";
+    } else {
+      systemInstruction = language === "ne"
+        ? "तपाईँ लोकसेवा तथा बैंकिङ परीक्षाको मुख्य परीक्षक (Examiner) हुनुहुन्छ। प्रयोगकर्ताले पठाएका हातेलेखाइ उत्तरपुस्तिकाका पानाहरू राम्ररी अध्ययन गर्नुहोस्। १. प्राप्त अङ्क (उदा: ७.५/१०), २. ऐन/कानुन र विषयवस्तुको प्रयोग, ३. मुख्य गल्तीहरू र ४. सुधारका ठोस सुझावहरू स्पष्ट बुँदामा दिनुहोस्।"
+        : "You are an official Lok Sewa & Banking Exam Examiner. Analyze the uploaded handwritten answer sheet photos thoroughly. Provide: 1. Exact Score (e.g., 7.5/10), 2. Legal/Content accuracy, 3. Major mistakes identified, and 4. Concrete improvement tips.";
+    }
+
+    const ai = getGeminiClient();
+    if (ai) {
+      const contentsParts: any[] = [];
+      if (cleanQuery) {
+        contentsParts.push({ text: cleanQuery });
+      } else {
+        contentsParts.push({ 
+          text: mode === "eval" 
+            ? "कृपया यस हस्तलिखित उत्तरपुस्तिकाको सूक्ष्म मूल्याङ्कन गरी अंक तथा सुधारका सुझाव दिनुहोस्।" 
+            : "कृपया यस विषयको गहिरो कानुनी विश्लेषण गर्नुहोस्।" 
+        });
+      }
+
+      uploadedImages.slice(0, 10).forEach(img => {
+        if (img && img.data) {
+          const cleanData = img.data.replace(/^data:[a-zA-Z0-9.+/-]+;base64,/, '').trim();
+          contentsParts.push({
+            inlineData: {
+              mimeType: img.mimeType || 'image/jpeg',
+              data: cleanData
+            }
+          });
+        }
+      });
+
+      const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+      for (const modelName of candidateModels) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: [{ role: 'user', parts: contentsParts }],
+            config: {
+              systemInstruction,
+              temperature: 0.25,
+            }
+          });
+
+          if (response.text && response.text.trim()) {
+            return res.json({
+              success: true,
+              source: "gemini",
+              model: modelName,
+              answer: response.text.trim()
+            });
+          }
+        } catch (err: any) {
+          console.warn(`[Deep Research] ${modelName} notice:`, err?.message || err);
+        }
+      }
+    }
+
+    // High quality offline fallback
+    let fallbackAnswer = "";
+    if (mode === "eval") {
+      const evalData = evaluateWithWordRankEngine(cleanQuery || "हस्तलिखित उत्तरपुस्तिका");
+      fallbackAnswer = language === "ne" ? `### 📊 उत्तरपुस्तिका मूल्याङ्कन (Word Rank Engine)
+- **प्राप्ताङ्क (Score):** **${evalData.score} / ${evalData.maxScore}**
+- **शब्दावली स्तर (Vocabulary Rank):** ${evalData.vocabularyRank}
+- **विषयवस्तु सान्दर्भिकता (Relevance):** ${evalData.relevanceScore}
+- **ढाँचा तथा प्रस्तुतीकरण:** ${evalData.structureRating}
+
+---
+### ✅ सबल पक्षहरू (Strengths):
+${evalData.strengths.map(s => `- ${s}`).join('\n')}
+
+---
+### ⚠️ मुख्य कमजोरी तथा छुटेका पक्षहरू (Weaknesses):
+${evalData.weaknesses.map(w => `- ${w}`).join('\n')}
+
+---
+### 🎯 परीक्षकको सुझाव (Concrete Tips):
+${evalData.guidanceTips.map(t => `- ${t}`).join('\n')}`
+      : `### 📊 Answer Sheet Evaluation (Word Rank Engine)
+- **Score:** **${evalData.score} / ${evalData.maxScore}**
+- **Vocabulary Rank:** High
+- **Relevance:** ${evalData.relevanceScore}
+- **Structure:** Clean & Syllabus Aligned
+
+---
+### ✅ Strengths:
+${evalData.strengths.map(s => `- ${s}`).join('\n')}
+
+---
+### ⚠️ Identified Weaknesses:
+${evalData.weaknesses.map(w => `- ${w}`).join('\n')}
+
+---
+### 🎯 Examiner Tips:
+${evalData.guidanceTips.map(t => `- ${t}`).join('\n')}`;
+    } else {
+      const deepContext = lookupDeepResearchContext(cleanQuery) || getPedagogicalKnowledgeText(cleanQuery);
+      fallbackAnswer = deepContext;
+    }
+
+    return res.json({
+      success: true,
+      source: "offline-engine",
+      answer: fallbackAnswer
+    });
+  } catch (err: any) {
+    console.error("Deep Research API error:", err);
+    res.status(500).json({ error: err.message || "Failed to process deep research query" });
+  }
+});
+
 // User Activity & Download & Exam Score Tracking APIs
 const userActivitiesList: any[] = [];
 const downloadEventsList: any[] = [];

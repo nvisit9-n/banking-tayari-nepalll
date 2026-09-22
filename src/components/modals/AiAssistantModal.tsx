@@ -41,6 +41,7 @@ import {
   executeAiQueryWithAutoRetry, 
   getOfflineKnowledgeFallback 
 } from '../../services/geminiClientService';
+import { DeepResearchEngine } from '../ai/DeepResearchEngine';
 
 interface AttachedFile {
   type: 'image' | 'pdf';
@@ -94,6 +95,7 @@ export const AiAssistantModal: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [examLevel, setExamLevel] = useState<ExamLevel>('level4-5');
   const [sessionMode, setSessionMode] = useState<'general' | 'answer_sheet'>('general');
+  const [activeAiTab, setActiveAiTab] = useState<'deep-research' | 'tutor'>('deep-research');
 
   // Input & Streaming states
   const [inputQuery, setInputQuery] = useState('');
@@ -542,43 +544,69 @@ export const AiAssistantModal: React.FC = () => {
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col sm:items-center sm:justify-center p-0 sm:p-3 md:p-6 animate-fadeIn">
       <div className="bg-white dark:bg-slate-900 w-full sm:max-w-5xl h-[100dvh] sm:h-[90vh] sm:max-h-[920px] rounded-none sm:rounded-3xl border-0 sm:border sm:border-slate-200 dark:sm:border-slate-800 shadow-2xl flex flex-col overflow-hidden transition-all">
         
-        {/* Top Header Bar (Clean Gemini Style) */}
-        <header className="pt-safe px-3 sm:px-4 py-2.5 sm:py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/95 shrink-0 z-20">
+        {/* Top Header Bar */}
+        <header className="pt-safe px-3 sm:px-4 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/95 shrink-0 z-20 gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {/* Sidebar Toggle Button (Gemini Style) */}
-            <button
-              onClick={() => setIsSidebarOpen(prev => !prev)}
-              className="p-2 rounded-xl text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
-              title={isSidebarOpen ? "च्याट इतिहास लुकाउनुहोस् (Collapse Sidebar)" : "च्याट इतिहास हेर्नुहोस् (Open Chat History)"}
-              aria-label="च्याट इतिहास टगल गर्नुहोस्"
-            >
-              {isSidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5 text-amber-500" />}
-            </button>
+            {/* Sidebar Toggle Button (Gemini Style) - only visible in tutor chat mode */}
+            {activeAiTab === 'tutor' && (
+              <button
+                onClick={() => setIsSidebarOpen(prev => !prev)}
+                className="p-2 rounded-xl text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
+                title={isSidebarOpen ? "च्याट इतिहास लुकाउनुहोस्" : "च्याट इतिहास हेर्नुहोस्"}
+                aria-label="च्याट इतिहास टगल गर्नुहोस्"
+              >
+                {isSidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5 text-amber-500" />}
+              </button>
+            )}
 
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-emerald-500 flex items-center justify-center text-slate-950 font-bold shadow-sm shrink-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-sky-600 via-indigo-600 to-emerald-600 flex items-center justify-center text-white font-bold shadow-sm shrink-0">
               <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
 
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <h2 className="font-black text-slate-900 dark:text-white text-xs sm:text-base truncate">
-                  AI अध्ययन मेन्टर
-                </h2>
-              </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[200px] sm:max-w-xs">
-                {currentSession?.title || 'बैंकिङ तथा लोकसेवा परीक्षा तयारी'}
+            <div className="min-w-0 hidden sm:block">
+              <h2 className="font-black text-slate-900 dark:text-white text-xs sm:text-sm truncate">
+                {activeAiTab === 'deep-research' ? 'Deep Research AI Engine' : 'AI अध्ययन मेन्टर'}
+              </h2>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[160px] sm:max-w-xs">
+                {activeAiTab === 'deep-research' ? 'ऐन, नियम तथा उत्तरपुस्तिका जाँच' : (currentSession?.title || 'बैंकिङ तथा लोकसेवा परीक्षा तयारी')}
               </p>
             </div>
           </div>
 
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center p-0.5 bg-slate-200/90 dark:bg-slate-800 rounded-xl border border-slate-300 dark:border-slate-700 shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveAiTab('deep-research')}
+              className={`px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeAiTab === 'deep-research'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Deep Research
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveAiTab('tutor')}
+              className={`px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                activeAiTab === 'tutor'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              AI मेन्टर
+            </button>
+          </div>
+
           {/* Clean Action Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             {/* Global TTS Stop if currently playing */}
             {ttsState.isPlaying && (
               <button
                 onClick={() => nepaliTts.stop()}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-600 dark:text-rose-400 text-[10px] font-bold animate-pulse cursor-pointer border border-rose-300 dark:border-rose-800"
-                title="आवाज बन्द गर्नुहोस् (Stop Speech)"
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-500/15 text-rose-600 dark:text-rose-400 text-[10px] font-bold animate-pulse cursor-pointer border border-rose-300 dark:border-rose-800"
+                title="आवाज बन्द गर्नुहोस्"
               >
                 <VolumeX className="w-3.5 h-3.5" />
                 <span className="hidden xs:inline">आवाज बन्द</span>
@@ -600,7 +628,19 @@ export const AiAssistantModal: React.FC = () => {
           </div>
         </header>
 
-        {/* Main Body with Gemini-Style Collapsible Sidebar + Conversation */}
+        {/* Modal Content: Deep Research Engine OR Chat Tutor */}
+        {activeAiTab === 'deep-research' ? (
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            <DeepResearchEngine
+              isModalView={true}
+              onClose={() => {
+                nepaliTts.stop();
+                setIsAiModalOpen(false);
+              }}
+            />
+          </div>
+        ) : (
+        /* Main Body with Gemini-Style Collapsible Sidebar + Conversation */
         <div className="flex-1 flex min-h-0 relative overflow-hidden">
           
           {/* Collapsible Left Drawer / Sidebar */}
@@ -1024,6 +1064,7 @@ export const AiAssistantModal: React.FC = () => {
           </main>
 
         </div>
+        )}
       </div>
     </div>
   );

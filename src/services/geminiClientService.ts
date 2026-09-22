@@ -22,6 +22,8 @@ export interface StreamAiOptions {
   query: string;
   history?: AiHistoryItem[];
   attachment?: AiAttachmentPayload;
+  images?: AiAttachmentPayload[];
+  isDeepResearch?: boolean;
   level?: string;
   mode?: string;
   onChunk: (chunk: string, accumulated: string) => void;
@@ -220,7 +222,16 @@ MANDATORY BEHAVIORAL DIRECTIVES:
   }
 
   const userParts: any[] = [];
-  if (attachment && attachment.data) {
+  if (options.images && options.images.length > 0) {
+    options.images.slice(0, 10).forEach(img => {
+      userParts.push({
+        inlineData: {
+          data: img.data,
+          mimeType: img.mimeType || 'image/jpeg'
+        }
+      });
+    });
+  } else if (attachment && attachment.data) {
     userParts.push({
       inlineData: {
         data: attachment.data,
@@ -300,15 +311,19 @@ MANDATORY BEHAVIORAL DIRECTIVES:
 async function streamFromBackend(
   options: StreamAiOptions
 ): Promise<string> {
-  const { query, history = [], attachment, level, mode, onChunk, signal } = options;
+  const { query, history = [], attachment, images, isDeepResearch, level, mode, onChunk, signal } = options;
 
   const payload: any = {
     query,
     history: history.slice(-10).map(m => ({ sender: m.sender, text: m.text })),
     level,
-    mode
+    mode,
+    isDeepResearch
   };
 
+  if (images && images.length > 0) {
+    payload.images = images;
+  }
   if (attachment) {
     payload.attachment = attachment;
   }
@@ -376,15 +391,19 @@ async function streamFromBackend(
  * Non-streaming backend fallback
  */
 async function fetchBackendNonStreaming(options: StreamAiOptions): Promise<string> {
-  const { query, history = [], attachment, level, mode, signal } = options;
+  const { query, history = [], attachment, images, isDeepResearch, level, mode, signal } = options;
 
   const payload: any = {
     query,
     history: history.slice(-10).map(m => ({ sender: m.sender, text: m.text })),
     level,
-    mode
+    mode,
+    isDeepResearch
   };
 
+  if (images && images.length > 0) {
+    payload.images = images;
+  }
   if (attachment) {
     payload.attachment = attachment;
   }

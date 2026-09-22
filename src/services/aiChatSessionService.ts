@@ -9,6 +9,7 @@ export interface ChatMessage {
   sender: 'ai' | 'user';
   text: string;
   image?: string;
+  images?: string[];
   pdfAttachment?: {
     name: string;
     sizeBytes: number;
@@ -16,11 +17,18 @@ export interface ChatMessage {
   suggestedTopic?: string;
   timestamp?: number;
   isError?: boolean;
+  isDeepResearch?: boolean;
   evaluationData?: {
     score?: number; // e.g. 7.5 out of 10
+    maxScore?: number;
+    ocrSummary?: string;
+    marksBreakdown?: { label: string; marks: number; max: number }[];
     strengths?: string[];
     weaknesses?: string[];
-    tips?: string[];
+    suggestions?: string[];
+    citations?: string[];
+    modelAnswer?: string;
+    sheetCount?: number;
   };
 }
 

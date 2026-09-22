@@ -17,13 +17,13 @@ import {
   Plus, 
   MessageSquare, 
   Trash2, 
-  Layers, 
   Camera, 
   RotateCcw,
   BookOpen,
-  HelpCircle,
-  Clock,
-  Download
+  Download,
+  Compass,
+  Eye,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { MarkdownRenderer } from '../common/MarkdownRenderer';
@@ -41,7 +41,7 @@ import {
   executeAiQueryWithAutoRetry, 
   getOfflineKnowledgeFallback 
 } from '../../services/geminiClientService';
-import { DeepResearchEngine } from '../ai/DeepResearchEngine';
+import { EvaluationCard } from '../ai/EvaluationCard';
 
 interface AttachedFile {
   type: 'image' | 'pdf';
@@ -95,14 +95,20 @@ export const AiAssistantModal: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
   const [examLevel, setExamLevel] = useState<ExamLevel>('level4-5');
   const [sessionMode, setSessionMode] = useState<'general' | 'answer_sheet'>('general');
-  const [activeAiTab, setActiveAiTab] = useState<'deep-research' | 'tutor'>('deep-research');
+
+  // Deep Research Toggle in Input Bar (Default: fast & universal)
+  const [isDeepResearchMode, setIsDeepResearchMode] = useState<boolean>(false);
 
   // Input & Streaming states
   const [inputQuery, setInputQuery] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [currentAiMessageId, setCurrentAiMessageId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
+  
+  // Multi-image upload (support 1-10 sheets) and PDF attachments
+  const [attachedImages, setAttachedImages] = useState<AttachedFile[]>([]);
+  const [attachedPdf, setAttachedPdf] = useState<AttachedFile | null>(null);
+  const [previewingImage, setPreviewingImage] = useState<string | null>(null);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
 
   // Audio / TTS state
@@ -188,7 +194,8 @@ export const AiAssistantModal: React.FC = () => {
     setSessions(prev => [newSession, ...prev.filter(s => s.id !== newSession.id)]);
     setCurrentSession(newSession);
     setSessionMode(mode);
-    setAttachedFile(null);
+    setAttachedImages([]);
+    setAttachedPdf(null);
     setInputQuery('');
     AiChatSessionService.saveSession(newSession, activeUid).catch(err => {
       console.warn('Save new session error notice:', err);
@@ -206,10 +213,10 @@ export const AiAssistantModal: React.FC = () => {
     setCurrentSession(session);
     setExamLevel(session.level || 'level4-5');
     setSessionMode(session.mode || 'general');
-    setAttachedFile(null);
+    setAttachedImages([]);
+    setAttachedPdf(null);
     setInputQuery('');
     
-    // On mobile screens, collapse drawer after selection
     if (window.innerWidth < 768) {
       setIsSidebarOpen(false);
     }
@@ -218,67 +225,50 @@ export const AiAssistantModal: React.FC = () => {
   // Handle deleting a session
   const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
     e.stopPropagation();
-    nepaliTts.stop();
-    await AiChatSessionService.deleteSession(sessionId, activeUid);
-    const remaining = sessions.filter(s => s.id !== sessionId);
-    setSessions(remaining);
-
-    if (currentSession?.id === sessionId) {
-      if (remaining.length > 0) {
-        setCurrentSession(remaining[0]);
-        setExamLevel(remaining[0].level || 'level4-5');
-      } else {
-        const fresh = AiChatSessionService.createNewSession(examLevel, 'general');
-        setSessions([fresh]);
-        setCurrentSession(fresh);
-        AiChatSessionService.saveSession(fresh, activeUid);
-      }
-    }
-    if (addToast) {
-      addToast('च्याट सत्र हटाइयो', 'info');
-    }
-  };
-
-  // Switch Level (Level 4-5, 6-8, 9-10)
-  const handleLevelChange = (lvl: ExamLevel) => {
-    setExamLevel(lvl);
-    if (currentSession) {
-      const updated = {
-        ...currentSession,
-        level: lvl,
-        updatedAt: Date.now()
-      };
-      setCurrentSession(updated);
-      AiChatSessionService.saveSession(updated, activeUid);
-    }
-  };
-
-  // Voice recognition handler
-  const handleToggleSpeech = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setSpeechNotice('तपाईंको ब्राउजरमा Speech Recognition समर्थित छैन। कृपया Chrome वा Edge प्रयोग गर्नुहोस्।');
-      setTimeout(() => setSpeechNotice(null), 4000);
+    if (sessions.length <= 1) {
+      const reset = AiChatSessionService.createNewSession(examLevel, 'general');
+      setSessions([reset]);
+      setCurrentSession(reset);
+      await AiChatSessionService.saveSession(reset, activeUid);
+      await AiChatSessionService.deleteSession(sessionId, activeUid);
       return;
     }
 
+    const updated = sessions.filter(s => s.id !== sessionId);
+    setSessions(updated);
+    if (currentSession?.id === sessionId) {
+      setCurrentSession(updated[0]);
+    }
+    await AiChatSessionService.deleteSession(sessionId, activeUid);
+  };
+
+  // Web Speech Voice Input Toggle
+  const handleToggleSpeech = () => {
     if (isListening) {
       if (recognitionRef.current) {
         recognitionRef.current.stop();
       }
       setIsListening(false);
+      setSpeechNotice(null);
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setSpeechNotice('तपाईंको ब्राउजरमा Voice Input सुविधा उपलब्ध छैन (Chrome/Edge प्रयोग गर्नुहोस्)।');
+      setTimeout(() => setSpeechNotice(null), 4000);
       return;
     }
 
     try {
       const recognition = new SpeechRecognition();
       recognition.lang = speechLanguage;
-      recognition.continuous = false;
       recognition.interimResults = true;
+      recognition.continuous = false;
 
       recognition.onstart = () => {
         setIsListening(true);
-        setSpeechNotice(speechLanguage === 'ne-NP' ? '🔴 आवाज सुन्दैछ... बोल्नुहोस् (नेपाली)' : '🔴 Listening... speak now (English)');
+        setSpeechNotice(speechLanguage === 'ne-NP' ? 'सुन्दैछ... नेपालीमा स्पष्ट बोल्नुहोस्' : 'Listening... speak clearly');
       };
 
       recognition.onresult = (event: any) => {
@@ -286,7 +276,7 @@ export const AiAssistantModal: React.FC = () => {
         for (let i = event.resultIndex; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
-        if (transcript.trim()) {
+        if (transcript) {
           setInputQuery(prev => (prev ? `${prev} ${transcript.trim()}` : transcript.trim()));
         }
       };
@@ -311,47 +301,96 @@ export const AiAssistantModal: React.FC = () => {
     }
   };
 
-  // File selection handler (PDF & Images)
+  // File selection handler (supporting multiple images 1-10 sheets, or 1 PDF)
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = e.target.files;
+    if (!fileList || fileList.length === 0) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      if (addToast) addToast('फाइल आकार १५ MB भन्दा कम हुनुपर्छ।', 'error');
+    const filesArray = Array.from(fileList);
+
+    // Check for PDF
+    const pdfFile = filesArray.find(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+    if (pdfFile) {
+      if (pdfFile.size > 25 * 1024 * 1024) {
+        if (addToast) addToast('PDF फाइल आकार २५ MB भन्दा कम हुनुपर्छ।', 'error');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const resultStr = reader.result as string;
+        const base64Data = resultStr.split(',')[1] || '';
+        setAttachedPdf({
+          type: 'pdf',
+          base64: base64Data,
+          mimeType: pdfFile.type || 'application/pdf',
+          name: pdfFile.name,
+          sizeBytes: pdfFile.size
+        });
+        setAttachedImages([]); // Clear images if PDF is chosen
+        setSessionMode('general');
+      };
+      reader.readAsDataURL(pdfFile);
+      e.target.value = '';
       return;
     }
 
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    const isImage = file.type.startsWith('image/');
-
-    if (!isPdf && !isImage) {
+    // Otherwise handle image files
+    const imageFiles = filesArray.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
       if (addToast) addToast('केवल PDF दस्तावेज वा तस्बिर (JPG, PNG, WebP) संलग्न गर्न सकिन्छ।', 'error');
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const resultStr = reader.result as string;
-      const base64Data = resultStr.split(',')[1] || '';
-      const previewUrl = isImage ? resultStr : undefined;
+    setAttachedPdf(null); // Clear PDF if images are chosen
+    setSessionMode('answer_sheet');
 
-      setAttachedFile({
-        type: isPdf ? 'pdf' : 'image',
-        base64: base64Data,
-        mimeType: file.type || (isPdf ? 'application/pdf' : 'image/jpeg'),
-        name: file.name,
-        sizeBytes: file.size,
-        previewUrl
+    const availableSlots = 10 - attachedImages.length;
+    if (availableSlots <= 0) {
+      if (addToast) addToast('अधिकतम १० वटा हस्तलिखित पानाहरू मात्र संलग्न गर्न सकिन्छ।', 'info');
+      return;
+    }
+
+    const filesToProcess = imageFiles.slice(0, availableSlots);
+    const readers = filesToProcess.map((file, idx) => {
+      return new Promise<AttachedFile>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const resultStr = reader.result as string;
+          const base64Data = resultStr.split(',')[1] || '';
+          resolve({
+            type: 'image',
+            base64: base64Data,
+            mimeType: file.type || 'image/jpeg',
+            name: file.name || `पाना-${attachedImages.length + idx + 1}.jpg`,
+            sizeBytes: file.size,
+            previewUrl: resultStr
+          });
+        };
+        reader.readAsDataURL(file);
       });
-    };
-    reader.readAsDataURL(file);
+    });
 
-    // Reset input so re-uploading the same file triggers onChange
+    Promise.all(readers).then(newImgs => {
+      setAttachedImages(prev => [...prev, ...newImgs]);
+      if (addToast) {
+        const total = attachedImages.length + newImgs.length;
+        addToast(`${newImgs.length} पाना थपियो (जम्मा: ${total}/१० पाना)`, 'success');
+      }
+    });
+
     e.target.value = '';
   };
 
-  const handleRemoveFile = () => {
-    setAttachedFile(null);
+  const handleRemoveImage = (index: number) => {
+    setAttachedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleClearAllAttachments = () => {
+    setAttachedImages([]);
+    setAttachedPdf(null);
+    if (sessionMode === 'answer_sheet') {
+      setSessionMode('general');
+    }
   };
 
   // Quick Action: Check Answer Sheet
@@ -363,15 +402,19 @@ export const AiAssistantModal: React.FC = () => {
   // Send prompt (handles streaming SSE and updates chat session)
   const handleSendPrompt = async (textToSend?: string) => {
     const promptText = (typeof textToSend === 'string' ? textToSend : inputQuery).trim();
-    if ((!promptText && !attachedFile) || isTyping) return;
+    const hasImages = attachedImages.length > 0;
+    const hasPdf = Boolean(attachedPdf);
 
-    const fileToSend = attachedFile;
-    const isAnswerSheetMode = sessionMode === 'answer_sheet';
+    if ((!promptText && !hasImages && !hasPdf) || isTyping) return;
+
+    const imagesToSend = [...attachedImages];
+    const pdfToSend = attachedPdf;
+    const isAnswerSheet = hasImages || sessionMode === 'answer_sheet';
 
     // 1. Ensure valid session with valid ID exists in state BEFORE triggering AI generation
     let activeSession = currentSession;
     if (!activeSession || !activeSession.id) {
-      activeSession = AiChatSessionService.createNewSession(examLevel, sessionMode);
+      activeSession = AiChatSessionService.createNewSession(examLevel, isAnswerSheet ? 'answer_sheet' : 'general');
     }
 
     // Auto-detect exam depth dynamically from prompt keywords
@@ -380,25 +423,29 @@ export const AiAssistantModal: React.FC = () => {
       setExamLevel(detectedLevel);
     }
 
-    // 2. Safely auto-generate topic title on first user message without blocking generation
+    // 2. Safely auto-generate topic title on first user message
     const isFirstUserMessage = !activeSession.messages.some(m => m.sender === 'user') || activeSession.title === 'नयाँ कुराकानी';
     const sessionTitle = isFirstUserMessage
-      ? generateChatTopicTitle(promptText, fileToSend?.name, sessionMode)
+      ? generateChatTopicTitle(promptText, pdfToSend?.name || (hasImages ? `${imagesToSend.length} पाना उत्तरपुस्तिका` : undefined), isAnswerSheet ? 'answer_sheet' : 'general')
       : activeSession.title;
 
     const userMsgId = `user-${Date.now()}`;
+    const userMessageText = promptText || (
+      pdfToSend
+        ? `[संलग्न PDF: ${pdfToSend.name}] कृपया यसको विस्तृत अध्ययन गरी मुख्य विषयवस्तु सम्झाउनुहोस्।`
+        : (hasImages
+            ? `[संलग्न ${imagesToSend.length} हस्तलिखित पानाहरू] कृपया यस उत्तरपुस्तिकाको १० अंकमा प्राप्ताङ्क, सबल पक्ष, कमजोरी र लोकसेवा/बैंकिङ परीक्षामा उच्चतम अंक प्राप्त गर्ने सुधार टिप्ससहित मूल्याङ्कन गर्नुहोस्।`
+            : '')
+    );
+
     const userMessage: ChatMessage = {
       id: userMsgId,
       sender: 'user',
-      text: promptText || (
-        fileToSend?.type === 'pdf'
-          ? `[संलग्न PDF: ${fileToSend.name}] कृपया यसको विस्तृत अध्ययन गरी मुख्य विषयवस्तु सम्झाउनुहोस्।`
-          : (isAnswerSheetMode
-              ? `[संलग्न हस्तलिखित उत्तरपुस्तिका: ${fileToSend?.name}] कृपया यस उत्तरपुस्तिकाको १० अंकमा प्राप्ताङ्क, सबल पक्ष, कमजोरी र लोकसेवा/बैंकिङ परीक्षामा उच्चतम अंक प्राप्त गर्ने सुधार टिप्ससहित मूल्याङ्कन गर्नुहोस्।`
-              : `[संलग्न तस्बिर: ${fileToSend?.name}] कृपया यस तस्बिरमा भएको विषयवस्तु विश्लेषण गर्नुहोस्।`)
-      ),
-      pdfAttachment: fileToSend?.type === 'pdf' ? { name: fileToSend.name, sizeBytes: fileToSend.sizeBytes } : undefined,
-      image: fileToSend?.type === 'image' ? fileToSend.previewUrl : undefined,
+      text: userMessageText,
+      pdfAttachment: pdfToSend ? { name: pdfToSend.name, sizeBytes: pdfToSend.sizeBytes } : undefined,
+      images: hasImages ? imagesToSend.map(img => img.previewUrl || img.base64) : undefined,
+      image: hasImages ? (imagesToSend[0].previewUrl || imagesToSend[0].base64) : undefined,
+      isDeepResearch: isDeepResearchMode,
       timestamp: Date.now()
     };
 
@@ -407,6 +454,7 @@ export const AiAssistantModal: React.FC = () => {
       id: aiTempId,
       sender: 'ai',
       text: '', // Empty text triggers the initial loading skeleton bubble
+      isDeepResearch: isDeepResearchMode,
       timestamp: Date.now()
     };
 
@@ -418,7 +466,7 @@ export const AiAssistantModal: React.FC = () => {
       title: sessionTitle,
       updatedAt: Date.now(),
       level: detectedLevel,
-      mode: sessionMode,
+      mode: isAnswerSheet ? 'answer_sheet' : 'general',
       messages: updatedMessages,
       messageCount: updatedMessages.length
     };
@@ -427,11 +475,12 @@ export const AiAssistantModal: React.FC = () => {
     setCurrentSession(sessionWithPrompt);
     setSessions(prev => [sessionWithPrompt, ...prev.filter(s => s.id !== sessionWithPrompt.id)]);
     setInputQuery('');
-    setAttachedFile(null);
+    setAttachedImages([]);
+    setAttachedPdf(null);
     setIsTyping(true);
     setCurrentAiMessageId(aiTempId);
 
-    // Save session in background without blocking stream
+    // Save session in background
     AiChatSessionService.saveSession(sessionWithPrompt, activeUid).catch(err => {
       console.warn('Initial session save background notice:', err);
     });
@@ -441,7 +490,7 @@ export const AiAssistantModal: React.FC = () => {
       setCurrentSession(prev => {
         if (!prev) return prev;
         const newMsgs = prev.messages.map(m =>
-          m.id === aiTempId ? { ...m, text: finalText, isError } : m
+          m.id === aiTempId ? { ...m, text: finalText, isError, isDeepResearch: isDeepResearchMode } : m
         );
         const finalizedSession: AiChatSession = {
           ...prev,
@@ -457,27 +506,38 @@ export const AiAssistantModal: React.FC = () => {
     };
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
+    const timeoutId = setTimeout(() => controller.abort(), 75000);
 
     try {
-      // Build history payload for Gemini context
       const historyPayload = activeSession.messages.slice(-10).map(m => ({
         sender: m.sender,
         text: m.text
       }));
 
-      const attachmentPayload = fileToSend ? {
-        data: fileToSend.base64,
-        mimeType: fileToSend.mimeType,
-        name: fileToSend.name
-      } : undefined;
+      const attachmentPayload = pdfToSend ? {
+        data: pdfToSend.base64,
+        mimeType: pdfToSend.mimeType,
+        name: pdfToSend.name
+      } : (imagesToSend.length === 1 ? {
+        data: imagesToSend[0].base64,
+        mimeType: imagesToSend[0].mimeType,
+        name: imagesToSend[0].name
+      } : undefined);
+
+      const imagesPayload = imagesToSend.length > 0 ? imagesToSend.map(img => ({
+        data: img.base64,
+        mimeType: img.mimeType,
+        name: img.name
+      })) : undefined;
 
       const finalText = await executeAiQueryWithAutoRetry({
-        query: promptText,
+        query: userMessageText,
         history: historyPayload,
         attachment: attachmentPayload,
+        images: imagesPayload,
+        isDeepResearch: isDeepResearchMode,
         level: detectedLevel,
-        mode: sessionMode,
+        mode: isAnswerSheet ? 'answer_sheet' : 'general',
         signal: controller.signal,
         onRetry: (attempt, max) => {
           setRetryNotice(`पुनः जडान प्रयास गरिँदैछ (${attempt}/${max})...`);
@@ -502,7 +562,7 @@ export const AiAssistantModal: React.FC = () => {
       clearTimeout(timeoutId);
       setRetryNotice(null);
       console.warn('Network error handled gracefully; providing syllabus knowledge fallback:', streamErr);
-      const fallbackText = getOfflineKnowledgeFallback(promptText);
+      const fallbackText = getOfflineKnowledgeFallback(userMessageText, isAnswerSheet ? 'answer_sheet' : 'general');
       finalizeAiMessage(fallbackText, false);
     } finally {
       setIsTyping(false);
@@ -542,70 +602,46 @@ export const AiAssistantModal: React.FC = () => {
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex flex-col sm:items-center sm:justify-center p-0 sm:p-3 md:p-6 animate-fadeIn">
-      <div className="bg-white dark:bg-slate-900 w-full sm:max-w-5xl h-[100dvh] sm:h-[90vh] sm:max-h-[920px] rounded-none sm:rounded-3xl border-0 sm:border sm:border-slate-200 dark:sm:border-slate-800 shadow-2xl flex flex-col overflow-hidden transition-all">
+      {/* Pure Sober Navy Slate (#0F172A) & Crisp White Modal Container */}
+      <div className="bg-[#0F172A] text-slate-100 w-full sm:max-w-5xl h-[100dvh] sm:h-[90vh] sm:max-h-[920px] rounded-none sm:rounded-3xl border-0 sm:border sm:border-slate-800 shadow-2xl flex flex-col overflow-hidden transition-all">
         
-        {/* Top Header Bar */}
-        <header className="pt-safe px-3 sm:px-4 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/95 shrink-0 z-20 gap-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {/* Sidebar Toggle Button (Gemini Style) - only visible in tutor chat mode */}
-            {activeAiTab === 'tutor' && (
-              <button
-                onClick={() => setIsSidebarOpen(prev => !prev)}
-                className="p-2 rounded-xl text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800 transition cursor-pointer shrink-0"
-                title={isSidebarOpen ? "च्याट इतिहास लुकाउनुहोस्" : "च्याट इतिहास हेर्नुहोस्"}
-                aria-label="च्याट इतिहास टगल गर्नुहोस्"
-              >
-                {isSidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5 text-amber-500" />}
-              </button>
-            )}
+        {/* Single Clean Top Header (Zero Clutter, No Split Tabs) */}
+        <header className="pt-safe px-3 sm:px-5 py-2.5 border-b border-slate-800 flex items-center justify-between bg-[#0B1120] shrink-0 z-20 gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
+            {/* Sidebar Drawer Toggle Button */}
+            <button
+              onClick={() => setIsSidebarOpen(prev => !prev)}
+              className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer shrink-0"
+              title={isSidebarOpen ? "च्याट इतिहास लुकाउनुहोस्" : "च्याट इतिहास हेर्नुहोस्"}
+              aria-label="च्याट इतिहास टगल गर्नुहोस्"
+            >
+              {isSidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5 text-amber-400" />}
+            </button>
 
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-sky-600 via-indigo-600 to-emerald-600 flex items-center justify-center text-white font-bold shadow-sm shrink-0">
               <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
 
-            <div className="min-w-0 hidden sm:block">
-              <h2 className="font-black text-slate-900 dark:text-white text-xs sm:text-sm truncate">
-                {activeAiTab === 'deep-research' ? 'Deep Research AI Engine' : 'AI अध्ययन मेन्टर'}
+            <div className="min-w-0">
+              <h2 className="font-black text-white text-xs sm:text-sm tracking-tight truncate flex items-center gap-1.5">
+                <span>AI अध्ययन साथी</span>
+                <span className="hidden xs:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-amber-400 border border-slate-700">
+                  Lok Sewa & Banking
+                </span>
               </h2>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[160px] sm:max-w-xs">
-                {activeAiTab === 'deep-research' ? 'ऐन, नियम तथा उत्तरपुस्तिका जाँच' : (currentSession?.title || 'बैंकिङ तथा लोकसेवा परीक्षा तयारी')}
+              <p className="text-[10px] text-slate-400 truncate max-w-[200px] sm:max-w-md font-medium">
+                {currentSession?.title || 'बैंकिङ तथा लोकसेवा परीक्षा तयारी'}
               </p>
             </div>
           </div>
 
-          {/* Mode Switcher Tabs */}
-          <div className="flex items-center p-0.5 bg-slate-200/90 dark:bg-slate-800 rounded-xl border border-slate-300 dark:border-slate-700 shrink-0">
-            <button
-              type="button"
-              onClick={() => setActiveAiTab('deep-research')}
-              className={`px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                activeAiTab === 'deep-research'
-                  ? 'bg-sky-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              Deep Research
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveAiTab('tutor')}
-              className={`px-2.5 sm:px-3.5 py-1 text-[11px] sm:text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                activeAiTab === 'tutor'
-                  ? 'bg-sky-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              AI मेन्टर
-            </button>
-          </div>
-
-          {/* Clean Action Controls */}
-          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Clean Action Controls: TTS Stop & Close */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Global TTS Stop if currently playing */}
             {ttsState.isPlaying && (
               <button
                 onClick={() => nepaliTts.stop()}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-rose-500/15 text-rose-600 dark:text-rose-400 text-[10px] font-bold animate-pulse cursor-pointer border border-rose-300 dark:border-rose-800"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-300 text-[11px] font-bold animate-pulse cursor-pointer border border-rose-500/40"
                 title="आवाज बन्द गर्नुहोस्"
               >
                 <VolumeX className="w-3.5 h-3.5" />
@@ -619,7 +655,7 @@ export const AiAssistantModal: React.FC = () => {
                 nepaliTts.stop();
                 setIsAiModalOpen(false);
               }}
-              className="min-w-[36px] min-h-[36px] p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-800 transition shrink-0 flex items-center justify-center cursor-pointer"
+              className="min-w-[36px] min-h-[36px] p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition shrink-0 flex items-center justify-center cursor-pointer"
               title="बन्द गर्नुहोस्"
               aria-label="बन्द गर्नुहोस्"
             >
@@ -628,32 +664,20 @@ export const AiAssistantModal: React.FC = () => {
           </div>
         </header>
 
-        {/* Modal Content: Deep Research Engine OR Chat Tutor */}
-        {activeAiTab === 'deep-research' ? (
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            <DeepResearchEngine
-              isModalView={true}
-              onClose={() => {
-                nepaliTts.stop();
-                setIsAiModalOpen(false);
-              }}
-            />
-          </div>
-        ) : (
-        /* Main Body with Gemini-Style Collapsible Sidebar + Conversation */
-        <div className="flex-1 flex min-h-0 relative overflow-hidden">
+        {/* Main Body with Gemini-Style Collapsible Sidebar + Conversation */}
+        <div className="flex-1 flex min-h-0 relative overflow-hidden bg-[#0F172A]">
           
           {/* Collapsible Left Drawer / Sidebar */}
           <aside
             className={`
               absolute md:static inset-y-0 left-0 z-30
-              w-64 sm:w-72 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800
+              w-64 sm:w-72 bg-[#090D16] border-r border-slate-800
               flex flex-col transition-all duration-300 ease-in-out
               ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:w-0 md:hidden md:-translate-x-0'}
             `}
           >
             {/* Top: "+ New Chat" Button */}
-            <div className="p-3 border-b border-slate-200 dark:border-slate-800 flex flex-col gap-2">
+            <div className="p-3 border-b border-slate-800 flex flex-col gap-2">
               <button
                 onClick={() => handleStartNewChat('general')}
                 className="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
@@ -665,25 +689,25 @@ export const AiAssistantModal: React.FC = () => {
               {/* Quick Action: Answer Sheet Checking */}
               <button
                 onClick={handleTriggerAnswerSheetEvaluation}
-                className="w-full py-1.5 px-2.5 rounded-xl bg-emerald-500/10 dark:bg-emerald-950/40 hover:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300/60 dark:border-emerald-800/60 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer"
+                className="w-full py-1.5 px-2.5 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/40 text-emerald-300 border border-emerald-800/60 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer"
                 title="हस्तलिखित उत्तरपुस्तिका चेक गर्नुहोस्"
               >
-                <Camera className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                <span>📝 उत्तरपुस्तिका मूल्याङ्कन (१० अङ्क)</span>
+                <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                <span>📝 उत्तरपुस्तिका मूल्याङ्कन (६-१० पाना)</span>
               </button>
             </div>
 
             {/* Recents Section (हालका कुराकानीहरू) */}
             <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
-              <div className="px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 flex items-center justify-between">
+              <div className="px-2 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center justify-between">
                 <span>हालका कुराकानी (Recents)</span>
-                <span className="text-[9px] bg-slate-200 dark:bg-slate-800 px-1.5 py-0.5 rounded-full font-mono">
+                <span className="text-[9px] bg-slate-800 px-1.5 py-0.5 rounded-full font-mono text-slate-300">
                   {sessions.length}
                 </span>
               </div>
 
               {sessions.length === 0 ? (
-                <div className="p-4 text-center text-xs text-slate-400">
+                <div className="p-4 text-center text-xs text-slate-500">
                   कुनै अघिल्लो कुराकानी छैन।
                 </div>
               ) : (
@@ -695,12 +719,12 @@ export const AiAssistantModal: React.FC = () => {
                       onClick={() => handleSelectSession(sess)}
                       className={`group w-full text-left p-2.5 rounded-xl text-xs transition flex items-center justify-between gap-2 cursor-pointer ${
                         isActive
-                          ? 'bg-amber-500/15 text-amber-950 dark:text-amber-200 font-bold border border-amber-500/30'
-                          : 'hover:bg-slate-200/60 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                          ? 'bg-amber-500/15 text-amber-300 font-bold border border-amber-500/30'
+                          : 'hover:bg-slate-800/60 text-slate-300'
                       }`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-500' : 'text-slate-400'}`} />
+                        <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-amber-400' : 'text-slate-500'}`} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs leading-snug">
                             {sess.title || 'नयाँ कुराकानी'}
@@ -716,7 +740,7 @@ export const AiAssistantModal: React.FC = () => {
                       {/* Delete session button */}
                       <button
                         onClick={(e) => handleDeleteSession(e, sess.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-500 dark:hover:text-rose-400 transition rounded-md hover:bg-slate-300/50 dark:hover:bg-slate-700/50 shrink-0 cursor-pointer"
+                        className="opacity-0 group-hover:opacity-100 p-1 hover:text-rose-400 transition rounded-md hover:bg-slate-700/50 shrink-0 cursor-pointer"
                         title="च्याट मेटाउनुहोस्"
                         aria-label="च्याट मेटाउनुहोस्"
                       >
@@ -729,9 +753,9 @@ export const AiAssistantModal: React.FC = () => {
             </div>
 
             {/* Bottom Sync Status Banner */}
-            <div className="p-2.5 border-t border-slate-200 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
+            <div className="p-2.5 border-t border-slate-800 text-[10px] text-slate-400 flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>Firebase RTDB सिंक</span>
               </span>
               <span className="text-[9px] font-mono text-slate-400">
@@ -744,23 +768,23 @@ export const AiAssistantModal: React.FC = () => {
           {isSidebarOpen && (
             <div
               onClick={() => setIsSidebarOpen(false)}
-              className="md:hidden fixed inset-0 bg-black/40 z-20 backdrop-blur-xs"
+              className="md:hidden fixed inset-0 bg-black/60 z-20 backdrop-blur-xs"
             />
           )}
 
           {/* Chat Stream & Interaction Area */}
-          <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-900 relative">
+          <main className="flex-1 flex flex-col min-w-0 bg-[#0F172A] relative">
             
             {/* Mode Banner if evaluating answer sheet */}
             {sessionMode === 'answer_sheet' && (
-              <div className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/40 border-b border-emerald-200 dark:border-emerald-900/50 text-emerald-800 dark:text-emerald-300 text-xs font-bold flex items-center justify-between shrink-0">
+              <div className="px-4 py-2 bg-emerald-950/50 border-b border-emerald-900/60 text-emerald-300 text-xs font-bold flex items-center justify-between shrink-0">
                 <span className="flex items-center gap-1.5">
-                  <Camera className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>📝 हस्तलिखित उत्तरपुस्तिका मूल्याङ्कन मोड सक्रिय (१० अंकमा परीक्षण)</span>
+                  <Camera className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>📝 हस्तलिखित उत्तरपुस्तिका मूल्याङ्कन मोड सक्रिय (६-१० पाना, १० अंकमा परीक्षण)</span>
                 </span>
                 <button
                   onClick={() => setSessionMode('general')}
-                  className="text-[10px] text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+                  className="text-[10px] text-emerald-400 hover:underline cursor-pointer"
                 >
                   सामान्य मोडमा फर्कनुहोस्
                 </button>
@@ -768,165 +792,233 @@ export const AiAssistantModal: React.FC = () => {
             )}
 
             {/* Chat Stream View */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 sm:space-y-4">
-              {messages.map((msg, msgIdx) => (
-                <div
-                  key={msg.id}
-                  className={`flex gap-2 sm:gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  {msg.sender === 'ai' && (
-                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-                      <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    </div>
-                  )}
+            <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4">
+              {messages.map((msg, msgIdx) => {
+                // Determine if this AI message represents an answer sheet evaluation
+                const isAnswerSheetEvaluation = msg.sender === 'ai' && (
+                  Boolean(msg.evaluationData) ||
+                  msg.text.includes('उत्तरपुस्तिका मूल्याङ्कन') ||
+                  msg.text.includes('प्राप्ताङ्क') ||
+                  msg.text.includes('Word Rank Engine') ||
+                  Boolean(currentSession?.messages[msgIdx - 1]?.images?.length)
+                );
 
+                const precedingUserImages = currentSession?.messages[msgIdx - 1]?.images;
+
+                return (
                   <div
-                    className={`max-w-[92%] sm:max-w-[80%] min-w-0 p-3 sm:p-4 rounded-xl sm:rounded-2xl text-xs sm:text-sm leading-relaxed ${
-                      msg.sender === 'user'
-                        ? 'bg-emerald-600 text-white font-medium rounded-br-none whitespace-pre-line shadow-sm'
-                        : msg.isError
-                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 rounded-bl-none border border-rose-200 dark:border-rose-900/60 shadow-sm'
-                        : 'bg-slate-100 dark:bg-slate-800/90 text-slate-800 dark:text-slate-100 rounded-bl-none border border-slate-200/70 dark:border-slate-700/70 shadow-sm'
-                    }`}
+                    key={msg.id}
+                    className={`flex gap-2 sm:gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {/* PDF Document Attachment Card in Chat History */}
-                    {msg.pdfAttachment && (
-                      <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-red-500/15 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 mb-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-red-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                          <FileText className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{msg.pdfAttachment.name}</p>
-                          <p className="text-[10px] text-red-700 dark:text-red-300 font-medium">
-                            PDF दस्तावेज संलग्न ({formatFileSize(msg.pdfAttachment.sizeBytes)}) • सुक्ष्म विश्लेषण
-                          </p>
-                        </div>
+                    {msg.sender === 'ai' && (
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 text-slate-950 flex items-center justify-center shrink-0 mt-0.5 shadow-sm font-bold">
+                        <Bot className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-950" />
                       </div>
                     )}
 
-                    {/* Image Attachment Thumbnail in Chat History */}
-                    {msg.image && (
-                      <div className="mb-2.5">
-                        <img
-                          src={msg.image}
-                          alt="संलग्न तस्बिर वा उत्तरपुस्तिका"
-                          className="max-h-56 sm:max-h-64 max-w-full rounded-lg sm:rounded-xl border border-white/20 object-contain shadow-sm bg-black/10"
-                        />
-                      </div>
-                    )}
+                    <div
+                      className={`max-w-[95%] sm:max-w-[85%] min-w-0 p-3.5 sm:p-4 rounded-2xl text-xs sm:text-sm leading-relaxed ${
+                        msg.sender === 'user'
+                          ? 'bg-[#1E293B] text-white font-medium rounded-br-none border border-slate-700 shadow-md'
+                          : msg.isError
+                          ? 'bg-rose-950/40 text-rose-200 rounded-bl-none border border-rose-900/60 shadow-sm'
+                          : 'bg-[#162032] text-slate-100 rounded-bl-none border border-slate-800/80 shadow-md'
+                      }`}
+                    >
+                      {/* Deep Research Badge if sent in Deep Research Mode */}
+                      {msg.isDeepResearch && (
+                        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-sky-950/80 border border-sky-500/40 text-sky-300 text-[10px] font-bold mb-2.5 shadow-xs">
+                          <Compass className="w-3 h-3 text-sky-400" />
+                          <span>Deep Research Mode • ऐन, कानुन तथा दफा प्रमाणित</span>
+                        </div>
+                      )}
 
-                    {msg.sender === 'ai' ? (
-                      !msg.text ? (
-                        /* Initial loading skeleton bubble while waiting for first stream chunk */
-                        <div className="space-y-3 py-1">
-                          <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
-                            <Sparkles className="w-4 h-4 animate-spin text-amber-500 shrink-0" />
-                            <span>AI अध्ययन साथीले उत्तर तयार गर्दैछ...</span>
+                      {/* PDF Document Attachment Card in Chat History */}
+                      {msg.pdfAttachment && (
+                        <div className="flex items-center gap-2.5 p-2.5 rounded-xl bg-red-950/40 border border-red-900/60 mb-2.5">
+                          <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                            <FileText className="w-4 h-4" />
                           </div>
-                          <div className="space-y-2 animate-pulse">
-                            <div className="h-3.5 bg-slate-200 dark:bg-slate-700/80 rounded-md w-3/4"></div>
-                            <div className="h-3.5 bg-slate-200 dark:bg-slate-700/80 rounded-md w-full"></div>
-                            <div className="h-3.5 bg-slate-200 dark:bg-slate-700/80 rounded-md w-5/6"></div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-white truncate">{msg.pdfAttachment.name}</p>
+                            <p className="text-[10px] text-red-300 font-medium">
+                              PDF दस्तावेज संलग्न ({formatFileSize(msg.pdfAttachment.sizeBytes)}) • सुक्ष्म अध्ययन
+                            </p>
                           </div>
                         </div>
-                      ) : (
-                        <div className="min-w-0">
-                          <MarkdownRenderer content={msg.text} />
-                          {isTyping && msg.id === currentAiMessageId && (
-                            <span className="inline-block w-1.5 h-3.5 ml-1 bg-amber-500 animate-pulse align-middle" />
-                          )}
+                      )}
+
+                      {/* Multi-Image Handwritten Sheets Display in User Message */}
+                      {msg.images && msg.images.length > 0 && (
+                        <div className="mb-3">
+                          <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-300 mb-2">
+                            <ImageIcon className="w-3.5 h-3.5" />
+                            <span>हस्तलिखित उत्तरपुस्तिका ({msg.images.length} पाना संलग्न):</span>
+                          </div>
+                          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                            {msg.images.map((imgUrl, idx) => (
+                              <div 
+                                key={idx} 
+                                onClick={() => setPreviewingImage(imgUrl)}
+                                className="relative group rounded-xl overflow-hidden border border-slate-700 bg-slate-950 aspect-[3/4] cursor-pointer hover:border-amber-500 transition shadow-sm"
+                              >
+                                <img
+                                  src={imgUrl}
+                                  alt={`पाना ${idx + 1}`}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                />
+                                <div className="absolute inset-0 bg-black/30 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                  <Eye className="w-5 h-5 text-white drop-shadow-md" />
+                                </div>
+                                <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-bold text-amber-300 border border-amber-500/40">
+                                  पाना {idx + 1}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      )
-                    ) : (
-                      msg.text
-                    )}
+                      )}
 
-                    {/* Retry Button on Error */}
-                    {msg.isError && !isTyping && (
-                      <div className="mt-3 pt-2.5 border-t border-rose-200 dark:border-rose-900/60 flex items-center justify-between">
-                        <button
-                          onClick={() => handleRetry(msgIdx)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-800 dark:text-rose-200 text-xs font-bold transition cursor-pointer"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          <span>पुनः प्रयास गर्नुहोस् (Retry)</span>
-                        </button>
-                      </div>
-                    )}
+                      {/* Single Image fallback if only one image */}
+                      {!msg.images && msg.image && (
+                        <div className="mb-2.5">
+                          <img
+                            src={msg.image}
+                            alt="संलग्न तस्बिर"
+                            onClick={() => setPreviewingImage(msg.image || null)}
+                            className="max-h-56 sm:max-h-64 max-w-full rounded-xl border border-slate-700 object-contain shadow-sm bg-black/40 cursor-pointer hover:opacity-95 transition"
+                          />
+                        </div>
+                      )}
 
-                    {/* AI Message Footer Toolbar with Nepali Voice (TTS) & Copy */}
-                    {msg.sender === 'ai' && msg.text && !msg.isError && (
-                      <div className="pt-2 sm:pt-3 mt-2 sm:mt-3 border-t border-slate-200 dark:border-slate-700/60 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 gap-2 flex-wrap">
-                        <div className="flex items-center gap-3">
-                          {/* Nepali Text-to-Speech (TTS) Voice Button */}
-                          <button
-                            onClick={() => handleToggleTts(msg.id, msg.text)}
-                            className={`flex items-center gap-1 font-bold transition cursor-pointer ${
-                              ttsState.isPlaying && ttsState.messageId === msg.id
-                                ? 'text-rose-500 animate-pulse'
-                                : 'hover:text-amber-600 dark:hover:text-amber-400'
-                            }`}
-                            title="नेपालीमा आवाज सुन्नुहोस् (Text to Speech)"
-                          >
-                            {ttsState.isPlaying && ttsState.messageId === msg.id ? (
-                              <>
-                                <VolumeX className="w-3.5 h-3.5" />
-                                <span>आवाज बन्द</span>
-                              </>
-                            ) : (
-                              <>
-                                <Volume2 className="w-3.5 h-3.5 text-amber-500" />
-                                <span>आवाज सुन्नुहोस् (TTS)</span>
-                              </>
+                      {/* AI Response Display */}
+                      {msg.sender === 'ai' ? (
+                        !msg.text ? (
+                          /* Initial loading skeleton bubble while waiting for first stream chunk */
+                          <div className="space-y-3 py-1">
+                            <div className="flex items-center gap-2 text-xs font-semibold text-amber-400">
+                              <Sparkles className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+                              <span>AI अध्ययन साथीले उत्तर तथा मूल्याङ्कन विश्लेषण गर्दैछ...</span>
+                            </div>
+                            <div className="space-y-2 animate-pulse">
+                              <div className="h-3.5 bg-slate-800 rounded-md w-3/4"></div>
+                              <div className="h-3.5 bg-slate-800 rounded-md w-full"></div>
+                              <div className="h-3.5 bg-slate-800 rounded-md w-5/6"></div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="min-w-0">
+                            {/* Rich Evaluation Card rendered inside the chat stream */}
+                            {isAnswerSheetEvaluation && (
+                              <EvaluationCard
+                                messageId={msg.id}
+                                evaluation={msg.evaluationData}
+                                rawText={msg.text}
+                                sheetCount={precedingUserImages?.length || 6}
+                                onToast={addToast}
+                              />
                             )}
-                          </button>
 
-                          {/* Copy Button */}
-                          <button
-                            onClick={() => handleCopyText(msg.id, msg.text)}
-                            className="flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer"
-                          >
-                            {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                            <span>{copiedId === msg.id ? 'कपी भयो' : 'कपी'}</span>
-                          </button>
+                            {/* Full Detailed Markdown Content */}
+                            <div className="mt-1">
+                              <MarkdownRenderer content={msg.text} />
+                            </div>
 
-                          {/* PDF Download Button */}
+                            {isTyping && msg.id === currentAiMessageId && (
+                              <span className="inline-block w-1.5 h-3.5 ml-1 bg-amber-400 animate-pulse align-middle" />
+                            )}
+                          </div>
+                        )
+                      ) : (
+                        <div className="whitespace-pre-line text-slate-100">
+                          {msg.text}
+                        </div>
+                      )}
+
+                      {/* Retry Button on Error */}
+                      {msg.isError && !isTyping && (
+                        <div className="mt-3 pt-2.5 border-t border-rose-900/60 flex items-center justify-between">
                           <button
-                            onClick={() => {
-                              exportStudyNotesToPdf({
-                                title: currentSession?.title || 'AI Study Notes',
-                                topic: currentSession?.title || 'लोकसेवा तथा बैंकिङ परीक्षा टिपोट',
-                                content: msg.text,
-                                examLevel: examLevel === 'level9-10' ? 'तह ९-१० (व्यवस्थापकीय तह)' : examLevel === 'level6-8' ? 'तह ६-८ (अधिकृत तह)' : 'तह ४-५ (सहायक तह)',
-                                generatedDate: new Date().toLocaleDateString('ne-NP'),
-                                mode: sessionMode
-                              });
-                              if (typeof addToast === 'function') {
-                                addToast('PDF प्रिन्ट / डाउनलोड विन्डो खोलियो', 'success');
-                              }
-                            }}
-                            className="flex items-center gap-1 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer"
-                            title="PDF डाउनलोड / प्रिन्ट गर्नुहोस्"
+                            onClick={() => handleRetry(msgIdx)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 text-xs font-bold transition cursor-pointer"
                           >
-                            <Download className="w-3.5 h-3.5 text-emerald-500" />
-                            <span>PDF डाउनलोड</span>
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>पुनः प्रयास गर्नुहोस् (Retry)</span>
                           </button>
                         </div>
+                      )}
+
+                      {/* AI Message Footer Toolbar with Nepali Voice (TTS), Copy, PDF */}
+                      {msg.sender === 'ai' && msg.text && !msg.isError && !isAnswerSheetEvaluation && (
+                        <div className="pt-2 sm:pt-3 mt-2 sm:mt-3 border-t border-slate-800 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 gap-2 flex-wrap">
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => handleToggleTts(msg.id, msg.text)}
+                              className={`flex items-center gap-1 font-bold transition cursor-pointer ${
+                                ttsState.isPlaying && ttsState.messageId === msg.id
+                                  ? 'text-rose-400 animate-pulse'
+                                  : 'hover:text-amber-400 text-slate-300'
+                              }`}
+                              title="नेपालीमा आवाज सुन्नुहोस् (Text to Speech)"
+                            >
+                              {ttsState.isPlaying && ttsState.messageId === msg.id ? (
+                                <>
+                                  <VolumeX className="w-3.5 h-3.5" />
+                                  <span>आवाज बन्द</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>आवाज सुन्नुहोस् (TTS)</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              onClick={() => handleCopyText(msg.id, msg.text)}
+                              className="flex items-center gap-1 hover:text-white transition cursor-pointer text-slate-300"
+                            >
+                              {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedId === msg.id ? 'कपी भयो' : 'कपी'}</span>
+                            </button>
+
+                            <button
+                              onClick={() => {
+                                exportStudyNotesToPdf({
+                                  title: currentSession?.title || 'AI Study Notes',
+                                  topic: currentSession?.title || 'लोकसेवा तथा बैंकिङ परीक्षा टिपोट',
+                                  content: msg.text,
+                                  examLevel: examLevel === 'level9-10' ? 'तह ९-१० (व्यवस्थापकीय तह)' : examLevel === 'level6-8' ? 'तह ६-८ (अधिकृत तह)' : 'तह ४-५ (सहायक तह)',
+                                  generatedDate: new Date().toLocaleDateString('ne-NP'),
+                                  mode: sessionMode
+                                });
+                                if (typeof addToast === 'function') {
+                                  addToast('PDF प्रिन्ट / डाउनलोड विन्डो खोलियो', 'success');
+                                }
+                              }}
+                              className="flex items-center gap-1 hover:text-emerald-400 transition cursor-pointer text-slate-300"
+                              title="PDF डाउनलोड / प्रिन्ट गर्नुहोस्"
+                            >
+                              <Download className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>PDF डाउनलोड</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {msg.sender === 'user' && (
+                      <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-700 text-white flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs shadow-sm border border-slate-600">
+                        U
                       </div>
                     )}
                   </div>
-
-                  {msg.sender === 'user' && (
-                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs shadow-sm">
-                      U
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
 
               {isTyping && (!currentAiMessageId || !messages.some(m => m.id === currentAiMessageId && !m.text)) && (
-                <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400 p-2">
-                  <Sparkles className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                <div className="flex items-center gap-2 text-xs text-amber-400 p-2">
+                  <Sparkles className="w-3.5 h-3.5 animate-spin text-amber-400" />
                   <span className="font-medium">{retryNotice || 'AI अध्ययन साथीले उत्तर प्रवाह गर्दैछ...'}</span>
                 </div>
               )}
@@ -935,7 +1027,7 @@ export const AiAssistantModal: React.FC = () => {
 
             {/* Speech Notice Banner */}
             {speechNotice && (
-              <div className="px-3 sm:px-4 py-1.5 bg-rose-50 dark:bg-rose-950/40 border-t border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-[11px] sm:text-xs font-semibold flex items-center justify-between shrink-0 animate-fadeIn">
+              <div className="px-4 py-2 bg-rose-950/60 border-t border-rose-900/60 text-rose-300 text-xs font-semibold flex items-center justify-between shrink-0 animate-fadeIn">
                 <div className="flex items-center gap-1.5 truncate">
                   <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
                   <span className="truncate">{speechNotice}</span>
@@ -943,79 +1035,131 @@ export const AiAssistantModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setSpeechLanguage(prev => prev === 'ne-NP' ? 'en-US' : 'ne-NP')}
-                  className="text-[10px] bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-300 font-bold shrink-0 ml-2"
+                  className="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-rose-800 text-rose-300 font-bold shrink-0 ml-2"
                 >
                   भाषा: {speechLanguage === 'ne-NP' ? 'नेपाली' : 'English'}
                 </button>
               </div>
             )}
 
-            {/* Attached File Preview Bar (Handwritten Sheet, Image, PDF) */}
-            {attachedFile && (
-              <div className="px-3 sm:px-4 py-2 bg-slate-100/90 dark:bg-slate-800/90 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  {attachedFile.type === 'pdf' ? (
-                    <div className="w-9 h-9 rounded-xl bg-red-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                      <FileText className="w-5 h-5" />
+            {/* Multi-Image Upload Preview Ribbon (6-10 Sheets) */}
+            {attachedImages.length > 0 && (
+              <div className="px-4 py-2.5 bg-[#0B1120] border-t border-slate-800 shrink-0">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
+                    <Camera className="w-4 h-4 text-amber-400" />
+                    <span>
+                      हस्तलिखित उत्तरपुस्तिका: {attachedImages.length}/१० पाना संलग्न
+                    </span>
+                    {attachedImages.length >= 6 && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/40">
+                        पूर्ण परीक्षणका लागि उपयुक्त
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {attachedImages.length < 10 && (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-[11px] font-bold text-sky-400 hover:text-sky-300 transition cursor-pointer"
+                      >
+                        + थप पाना
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleClearAllAttachments}
+                      className="text-[11px] font-bold text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                    >
+                      सबै हटाउनुहोस्
+                    </button>
+                  </div>
+                </div>
+
+                {/* Thumbnails strip */}
+                <div className="flex items-center gap-2.5 overflow-x-auto pb-1 scrollbar-thin">
+                  {attachedImages.map((img, idx) => (
+                    <div key={idx} className="relative shrink-0 group rounded-xl overflow-hidden border border-slate-700 w-16 h-20 bg-slate-900 shadow-sm">
+                      <img
+                        src={img.previewUrl}
+                        alt={`Sheet ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                      />
+                      <span className="absolute bottom-0 inset-x-0 bg-black/80 text-[9px] text-center font-bold text-amber-300 py-0.5">
+                        पाना {idx + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveImage(idx)}
+                        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] font-black cursor-pointer hover:bg-rose-700 shadow-xs"
+                        title="हटाउनुहोस्"
+                      >
+                        ✕
+                      </button>
                     </div>
-                  ) : (
-                    <img
-                      src={attachedFile.previewUrl}
-                      alt="Attached"
-                      className="w-9 h-9 object-cover rounded-xl border border-slate-300 dark:border-slate-700 shadow-sm shrink-0"
-                    />
-                  )}
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Attached PDF Preview Bar */}
+            {attachedPdf && (
+              <div className="px-4 py-2 bg-[#0B1120] border-t border-slate-800 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <FileText className="w-4 h-4" />
+                  </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-md">
-                      {attachedFile.name}
+                    <p className="font-bold text-xs text-white truncate max-w-[200px] sm:max-w-md">
+                      {attachedPdf.name}
                     </p>
-                    <p className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                      {sessionMode === 'answer_sheet'
-                        ? '📝 उत्तरपुस्तिका जाँचका लागि तयार'
-                        : (attachedFile.type === 'pdf' ? '📄 PDF दस्तावेज संलग्न' : '📷 तस्बिर संलग्न')} ({formatFileSize(attachedFile.sizeBytes)})
+                    <p className="text-[10px] text-red-300 font-medium">
+                      PDF दस्तावेज संलग्न ({formatFileSize(attachedPdf.sizeBytes)})
                     </p>
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={handleRemoveFile}
-                  className="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 font-bold px-2 py-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition shrink-0 cursor-pointer"
+                  onClick={handleClearAllAttachments}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-bold px-2 py-1 rounded-lg hover:bg-slate-800 transition shrink-0 cursor-pointer"
                 >
                   हटाउनुहोस्
                 </button>
               </div>
             )}
 
-            {/* Chat Input Bar */}
+            {/* Chat Input Bar with Discrete Deep Research Switch */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                if (inputQuery.trim() || attachedFile) {
+                if (inputQuery.trim() || attachedImages.length > 0 || attachedPdf) {
                   handleSendPrompt();
                 }
               }}
-              className="p-2 sm:p-3 pb-safe border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-1.5 sm:gap-2 shrink-0 z-20"
+              className="p-2.5 sm:p-3.5 pb-safe border-t border-slate-800 bg-[#0B1120] flex items-center gap-1.5 sm:gap-2 shrink-0 z-20"
             >
-              {/* File attachment input: PDF & Images */}
+              {/* File attachment input: Multiple Images (up to 10) & PDF */}
               <input
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileSelect}
                 accept=".pdf,application/pdf,image/png,image/jpeg,image/jpg,image/webp"
+                multiple
                 className="hidden"
                 id="ai-assistant-file-input"
               />
 
-              {/* Upload photo / answer sheet / PDF */}
+              {/* Upload Paperclip button */}
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isTyping}
-                className="w-10 h-10 min-w-[40px] flex items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-amber-500 dark:hover:text-amber-400 hover:border-amber-500 transition disabled:opacity-40 shrink-0 cursor-pointer shadow-2xs"
-                title="हस्तलिखित उत्तरपुस्तिका, प्रश्नपत्र वा PDF संलग्न गर्नुहोस्"
+                className="w-10 h-10 min-w-[40px] flex items-center justify-center rounded-xl border border-slate-700 bg-slate-800/80 text-slate-300 hover:text-amber-400 hover:border-amber-500 transition disabled:opacity-40 shrink-0 cursor-pointer shadow-xs"
+                title="हस्तलिखित उत्तरपुस्तिका (६-१० पाना) वा PDF संलग्न गर्नुहोस्"
                 aria-label="फाइल संलग्न गर्नुहोस्"
               >
-                <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-amber-600 dark:text-amber-400" />
+                <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
               </button>
 
               {/* Voice Input (Speech-to-Text) Button */}
@@ -1023,37 +1167,62 @@ export const AiAssistantModal: React.FC = () => {
                 type="button"
                 onClick={handleToggleSpeech}
                 disabled={isTyping}
-                className={`w-10 h-10 min-w-[40px] flex items-center justify-center rounded-xl border transition disabled:opacity-40 shrink-0 cursor-pointer shadow-2xs ${
+                className={`w-10 h-10 min-w-[40px] flex items-center justify-center rounded-xl border transition disabled:opacity-40 shrink-0 cursor-pointer shadow-xs ${
                   isListening
-                    ? 'bg-rose-500 text-white border-rose-600 animate-pulse ring-2 ring-rose-300 dark:ring-rose-800 shadow-md'
-                    : 'border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:text-emerald-500 dark:hover:text-emerald-400 hover:border-emerald-500'
+                    ? 'bg-rose-500 text-white border-rose-600 animate-pulse ring-2 ring-rose-400 shadow-md'
+                    : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:text-emerald-400 hover:border-emerald-500'
                 }`}
                 title={isListening ? "आवाज रेकर्डिङ बन्द गर्नुहोस्" : "बोलेर प्रश्न सोध्नुहोस् (Speech to Text - नेपाली/English)"}
                 aria-label="बोलेर प्रश्न सोध्नुहोस्"
               >
-                {isListening ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 dark:text-emerald-400" />}
+                {isListening ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />}
               </button>
 
+              {/* Discrete, Elegant Deep Research Toggle Switch */}
+              <button
+                type="button"
+                onClick={() => setIsDeepResearchMode(prev => !prev)}
+                className={`h-10 px-2.5 sm:px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer shadow-xs ${
+                  isDeepResearchMode
+                    ? 'bg-sky-500/20 text-sky-400 border-sky-500/60 ring-1 ring-sky-500/40 shadow-xs'
+                    : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
+                }`}
+                title={
+                  isDeepResearchMode
+                    ? 'Deep Research सक्रिय: नेपालका ऐन, कानुन, दफा तथा विस्तृत अनुसन्धान मोड'
+                    : 'Deep Research निष्क्रिय: द्रुत, प्रत्यक्ष तथा जुनसुकै विषयमा तत्काल समाधान'
+                }
+              >
+                <Compass className={`w-3.5 h-3.5 ${isDeepResearchMode ? 'text-sky-400 animate-spin-slow' : 'text-slate-400'}`} />
+                <span className="hidden md:inline">
+                  {isDeepResearchMode ? 'Deep Research ON' : 'Deep Research'}
+                </span>
+              </button>
+
+              {/* Text Input */}
               <input
                 id="ai-assistant-input"
                 type="text"
                 value={inputQuery}
                 onChange={(e) => setInputQuery(e.target.value)}
                 placeholder={
-                  attachedFile
-                    ? (sessionMode === 'answer_sheet'
-                        ? 'उत्तरपुस्तिका मूल्याङ्कन सम्बन्धी विशेष निर्देशन...'
-                        : (attachedFile.type === 'pdf' ? 'यस PDF बारे प्रश्न वा निर्देशन...' : 'यस तस्बिर सम्बन्धी प्रश्न...'))
-                    : 'सोध्नुहोस् वा बोल्नुहोस् (Mic)...'
+                  attachedImages.length > 0
+                    ? `हस्तलिखित ${attachedImages.length} पाना उत्तरपुस्तिका मूल्याङ्कन निर्देशन...`
+                    : attachedPdf
+                    ? 'यस PDF दस्तावेज सम्बन्धी प्रश्न वा सारांश...'
+                    : (isDeepResearchMode
+                        ? 'ऐन, कानुन, दफा वा गहिरो अनुसन्धान सम्बन्धी प्रश्न...'
+                        : 'सोध्नुहोस् वा बोल्नुहोस् (Mic)...')
                 }
                 aria-label="आफ्नो प्रश्न यहाँ सोध्नुहोस्..."
-                className="flex-1 min-w-0 h-10 sm:h-11 px-3 sm:px-4 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-amber-500"
+                className="flex-1 min-w-0 h-10 sm:h-11 px-3 sm:px-4 rounded-xl bg-slate-900 border border-slate-700 text-xs sm:text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-500 transition"
               />
 
+              {/* Submit / Send Button */}
               <button
                 id="ai-assistant-send-btn"
                 type="submit"
-                disabled={(!inputQuery.trim() && !attachedFile) || isTyping}
+                disabled={(!inputQuery.trim() && attachedImages.length === 0 && !attachedPdf) || isTyping}
                 className="w-10 h-10 sm:w-11 sm:h-11 min-w-[40px] flex items-center justify-center rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 hover:from-amber-600 hover:to-orange-600 transition disabled:opacity-40 cursor-pointer shrink-0 shadow-md font-bold"
                 title="पठाउनुहोस्"
                 aria-label="पठाउनुहोस्"
@@ -1064,8 +1233,30 @@ export const AiAssistantModal: React.FC = () => {
           </main>
 
         </div>
-        )}
       </div>
+
+      {/* Full-Screen Image Lightbox Viewer */}
+      {previewingImage && (
+        <div 
+          onClick={() => setPreviewingImage(null)}
+          className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn cursor-pointer"
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => setPreviewingImage(null)}
+              className="absolute -top-10 right-0 p-2 rounded-full bg-slate-800/80 text-white hover:bg-slate-700 transition cursor-pointer"
+              title="बन्द गर्नुहोस्"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={previewingImage}
+              alt="हस्तलिखित उत्तरपुस्तिका पूरा पाना"
+              className="max-w-full max-h-[85vh] rounded-xl object-contain shadow-2xl border border-slate-700"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

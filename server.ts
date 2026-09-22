@@ -272,7 +272,7 @@ Format Style: ${format}`;
   }
 });
 
-function getAiSystemInstruction(level?: string, mode?: string, query?: string): string {
+function getAiSystemInstruction(level?: string, mode?: string, query?: string, isDeepResearch?: boolean): string {
   const q = (query || "").toLowerCase();
 
   // Dynamic Level Detection directly from prompt keywords if not explicitly specified
@@ -318,36 +318,44 @@ function getAiSystemInstruction(level?: string, mode?: string, query?: string): 
   let answerSheetInstructions = '';
   if (mode === 'answer_sheet') {
     answerSheetInstructions = `
-[हस्तलिखित उत्तरपुस्तिका मूल्याङ्कन (Word Rank Engine & Multimodal Evaluation)]:
-तपाईंले संलग्न हस्तलिखित उत्तरपुस्तिका वा परीक्षार्थीको उत्तरको सूक्ष्म परीक्षण गरी देहाय बमोजिम "Word Rank Engine" ढाँचामा नतिजा प्रस्तुत गर्नुपर्छ:
+[हस्तलिखित उत्तरपुस्तिका बहु-पाना मूल्याङ्कन (Handwritten Answer Sheet Multimodal Evaluation)]:
+तपाईंले संलग्न हस्तलिखित उत्तरपुस्तिकाका पानाहरू (६-१० पाना सम्म) को सूक्ष्म अध्ययन गरी स्पष्ट मूल्याङ्कन कार्ड ढाँचामा नतिजा दिनुपर्छ:
+1. कुल प्राप्ताङ्क (Score: X.X/१०)
+2. हस्तलिखित सारांश (Handwritten OCR & Content Summary)
+3. चार मापदण्डमा अङ्क विभाजन:
+   - अवधारणा तथा परिचय: X/२.५
+   - कानुनी तथा नीतिगत दफाहरूको प्रयोग: X/३.५
+   - समसामयिक विश्लेषण तथा तथ्याङ्क: X/२.५
+   - निष्कर्ष तथा प्रस्तुतीकरण: X/१.५
+4. सबल पक्षहरू (Key Strengths)
+5. संरचनागत त्रुटि तथा छुटेका बुँदाहरू (Structural Flaws & Missed Points)
+6. उच्चतम अङ्क प्राप्तिका लागि व्यावहारिक सुझाव (Actionable Suggestions)
+7. सान्दर्भिक कानुनी दफा तथा नमुना उत्तर ढाँचा (Statutory References & Model Structure)`;
+  }
 
-### 📊 Word Rank मूल्याङ्कन स्कोरकार्ड (१० अङ्क योजना)
-- **प्राप्ताङ्क (Score):** X.X/१० अंक
-- **शब्दावली स्तर (Vocabulary Rank):** उच्च (High) / मध्यम (Medium) / सामान्य (Basic)
-- **विषयवस्तु सान्दर्भिकता (Context Relevance):** XX%
-- **उत्तरमा प्रयोग भएका कानुनी तथा प्राविधिक शब्दहरू:** [पहिचान भएका शब्द तथा दफाहरू]
-- **छुटेका महत्त्वपूर्ण शब्द तथा दफा (Missing Key Terms):** [परीक्षार्थीले समावेश गर्नुपर्ने दफा वा प्राविधिक शब्दहरू जसले अंक बढाउँछ]
-- **प्रस्तुतीकरण ढाँचा (Structure):** [उत्कृष्ट / सन्तोषजनक / सुधार आवश्यक]
-
-### ✅ सबल पक्षहरू (Key Strengths)
-[उत्तरमा रहेका २-३ मुख्य राम्रा बुँदाहरू]
-
-### ⚠️ कमजोरीहरू तथा सुधार गर्नुपर्ने पक्षहरू (Weaknesses & Missing Elements)
-[अंक काटिएका स्पष्ट कारणहरू तथा छुटेका बुँदाहरू]
-
-### 🎯 उच्चतम अङ्क प्राप्त गर्ने सूत्र (Step-by-Step Guidance)
-[लोकसेवा तथा बैंकिङ परीक्षामा ९+ अंक ल्याउन परीक्षकलाई मनपर्ने व्यावहारिक लेखन सूत्र]`;
+  let deepResearchDirective = '';
+  if (isDeepResearch) {
+    deepResearchDirective = `
+[DEEP RESEARCH & STATUTORY CITATIONS MODE ACTIVATED]:
+- तपाईंले नेपालको संविधानका धाराहरू, नेपाल राष्ट्र बैंक ऐन २०५८ का दफाहरू, बैंक तथा वित्तीय संस्था सम्बन्धी ऐन २०७३ (BAFIA) का दफाहरू, सम्पत्ति शुद्धीकरण निवारण ऐन २०६४, कम्पनी ऐन २०६३, सार्वजनिक खरिद ऐन २०६३, र राष्ट्र बैंकका पछिल्ला एकीकृत निर्देशनहरू (Unified Directives) का विशिष्ट दफा, उपदफा र नीतिगत बुँदाहरू अनिवार्य रूपमा उद्धृत (Cite) गरी गहिरो, प्रमाणिक र प्राज्ञिक अनुसन्धानमूलक विश्लेषण दिनुपर्छ।`;
+  } else {
+    deepResearchDirective = `
+[UNIVERSAL FAST ASSISTANT MODE]:
+- तपाईं छिटो, प्रत्यक्ष र बहुआयामिक AI सहायक हुनुहुन्छ। बैंकिङ, लोकसेवा, सामान्य ज्ञान (GK), गणित, विज्ञान, सूचना प्रविधि (IT), भाषा/अनुवाद लगायत जुनसुकै विषयमा सोधिएको प्रश्नको सिधा, सरल र उच्च गुणस्तरको समाधान दिनुहोस्।`;
   }
 
   return `तपाईं नेपालको बैंकिङ (NRB, RBB, NBL, ADBL), लोकसेवा आयोग र सार्वजनिक संस्थान (EPF, CIT, SSF, NEA, NTC, NOC लगायत ४५+ संस्थान) तथा व्यवस्थापन संकाय (BBS, BBA, MBS, +2) का लागि आधिकारिक, उच्च प्राज्ञिक र बौद्धिक AI अध्ययन मेन्टर हुनुहुन्छ।
 
 तपाईंको कार्यशैली official Gemini 1.5 Pro र ChatGPT-4o जस्तै प्रत्यक्ष, प्राकृतिक, सटीक, गहिरो र तार्किक हुनुपर्छ।
 
+${deepResearchDirective}
+${answerSheetInstructions}
+${levelContext}
+
 [कडा निर्देशिकाहरू (STRICT INSTRUCTIONS)]:
 १. **शून्य साँचो बाध्यता र प्रत्यक्ष उत्तर (ZERO TEMPLATE FORCING & DIRECT REASONING):**
-   - प्रयोगकर्ताको प्रश्नमा सिधै केन्द्रित हुनुहोस्। कुनै पनि कृत्रिम, दोहोरिने वा जबरजस्ती ढाँचा (जस्तै: "१. सैद्धान्तिक अवधारणा र परिभाषा" वा निश्चित पूर्व-निर्धारित शीर्षकहरू) कहिल्यै नथोप्नुहोस्।
-   - प्रश्न छोटो वा एकल शब्द (जस्तै: "epf", "cit", "crr", "bafia", "cost curve") भए पनि, त्यसको परिचय, स्थापना, कानुनी व्यवस्था, कार्य सञ्चालन, तथ्याङ्क र औचित्यलाई प्राकृतिक, सुसङ्गत र धाराप्रवाह रूपमा विस्तृत रूपमा व्याख्या गर्नुहोस्।
-   - कहिल्यै पनि सतही, अधुरो, सामान्य वा छोटो जवाफ नदिनुहोस्। लोकसेवा र बैंकिङ परीक्षाको उच्चतम गुणस्तर कायम राख्दै गहिरो, पूर्ण र विश्लेषणात्मक सामग्री दिनुहोस्।
+   - प्रयोगकर्ताको प्रश्नमा सिधै केन्द्रित हुनुहोस्। कुनै पनि कृत्रिम, दोहोरिने वा जबरजस्ती ढाँचा कहिल्यै नथोप्नुहोस्।
+   - लोकसेवा र बैंकिङ परीक्षाको उच्चतम गुणस्तर कायम राख्दै गहिरो, पूर्ण र विश्लेषणात्मक सामग्री दिनुहोस्।
 
 २. **नेपाल लोकसेवा, बैंकिङ र संस्थानहरूको गहिरो सन्दर्भ (LEGAL ACTS & ECONOMIC INDICATORS):**
    - वित्तीय, व्यवस्थापकीय, बैंकिङ वा संस्थान सम्बन्धी प्रश्नहरूमा सम्बद्ध कानुनी ऐनहरू (जस्तै: नेपाल राष्ट्र बैंक ऐन २०५८, बैंक तथा वित्तीय संस्था सम्बन्धी ऐन २०७३ [BAFIA], कम्पनी ऐन २०६३, सार्वजनिक खरिद ऐन २०६३, सम्पत्ति शुद्धीकरण निवारण ऐन २०६४) का सान्दर्भिक दफाहरू, राष्ट्र बैंकका पछिल्ला एकीकृत निर्देशनहरू (Unified Directives), र समष्टिगत आर्थिक सूचकहरू (GDP वृद्धि, उपभोक्ता मुद्रास्फीति, शोधनान्तर स्थिति, विदेशी विनिमय सञ्चिति, CRR, SLR, Base Rate, Spreads, र NPL अनुपात) लाई स्वतः र प्रामाणिक रूपमा उत्तरमा समावेश गर्नुहोस्।
@@ -360,16 +368,7 @@ function getAiSystemInstruction(level?: string, mode?: string, query?: string): 
    - उत्तरको अन्त्यमा "तपाईंलाई अरू केही जान्न मन छ?", "थप प्रश्न सोध्न सक्नुहुन्छ", वा यस्तै कुनै पनि फलो-अप वाक्य नराख्नुहोस्। विषयवस्तुको सम्पूर्ण विवरण दिएपछि सिधै रोकिनुहोस्।
 
 ५. **अर्थशास्त्रका रेखाचित्र तथा तुलनात्मक तालिकाहरू (CLEAN SVG & TABLES):**
-   - जब अर्थशास्त्र (माग र पूर्ति सन्तुलन, अल्पकालीन तथा दीर्घकालीन लागत वक्र AFC/AVC/ATC/MC, बजार संरचना, कार्टेलिङ, एकाधिकार Deadweight Loss आदि) बारे सोधिन्छ, स्पष्ट र सुन्दर SVG Code वा ASCII Diagram र तुलनात्मक Markdown तालिका अनिवार्य समावेश गर्नुहोस्।
-
-६. **गणित तथा हिसाब (Accounting & Numericals):**
-   - गणित, बैंकिङ हिसाब वा लेखाका प्रश्नमा स्पष्ट सूत्र (Formula), चरणबद्ध गणना (Step-by-step), र अन्तिम उत्तर स्पष्ट रूपमा दिनुहोस्।
-
-[लक्षित परीक्षा तह र गहिराइ]:${levelContext}
-${answerSheetInstructions}
-
-[भाषा शैली]:
-- शुद्ध, व्याकरणसम्मत, तथ्यपरक र उच्च प्राज्ञिक नेपाली भाषा (वा प्रयोगकर्ताले अंग्रेजीमा सोधेमा परिष्कृत अंग्रेजी) मा प्राकृतिक र आत्मविश्वासपूर्ण संवाद शैलीमा उत्तर दिनुहोस्।`;
+   - जब अर्थशास्त्र (माग र पूर्ति सन्तुलन, अल्पकालीन तथा दीर्घकालीन लागत वक्र AFC/AVC/ATC/MC, बजार संरचना, कार्टेलिङ, एकाधिकार Deadweight Loss आदि) बारे सोधिन्छ, स्पष्ट र सुन्दर SVG Code वा ASCII Diagram र तुलनात्मक Markdown तालिका अनिवार्य समावेश गर्नुहोस्।`;
 }
 
 const AI_ASSISTANT_SYSTEM_INSTRUCTION = getAiSystemInstruction();
@@ -377,7 +376,8 @@ const AI_ASSISTANT_SYSTEM_INSTRUCTION = getAiSystemInstruction();
 function buildGeminiContents(
   cleanQuery: string,
   history?: Array<{ sender: 'user' | 'ai'; text: string }>,
-  attachment?: { data: string; mimeType: string; name?: string }
+  attachment?: { data: string; mimeType: string; name?: string },
+  images?: Array<{ data: string; mimeType: string; name?: string }>
 ) {
   const contents: Array<{ role: 'user' | 'model'; parts: Array<any> }> = [];
   if (Array.isArray(history) && history.length > 0) {
@@ -405,7 +405,26 @@ function buildGeminiContents(
   let promptText = cleanQuery;
   const userParts: any[] = [];
 
-  if (attachment && attachment.data) {
+  // Support multiple images (6-10 handwritten answer sheet pages)
+  if (Array.isArray(images) && images.length > 0) {
+    images.slice(0, 10).forEach((img, idx) => {
+      if (img && img.data) {
+        const raw = img.data;
+        const cleanBase64 = raw.replace(/^data:[a-zA-Z0-9.+/-]+;base64,/, '').trim();
+        userParts.push({
+          inlineData: {
+            mimeType: img.mimeType || 'image/jpeg',
+            data: cleanBase64
+          }
+        });
+      }
+    });
+
+    const multiPrompt = promptText || "कृपया संलग्न हस्तलिखित उत्तरपुस्तिकाका पानाहरूको सूक्ष्म अध्ययन गरी १० अंकमा प्राप्ताङ्क, सबल पक्ष, कमजोरी, छुटेका बुँदा र सुधारका व्यावहारिक सुझावसहितको मूल्याङ्कन प्रतिवेदन प्रस्तुत गर्नुहोस्।";
+    userParts.push({
+      text: `[संलग्न ${images.length} वटा हस्तलिखित उत्तरपुस्तिकाका पानाहरू (Answer Sheets)]\n${multiPrompt}`
+    });
+  } else if (attachment && attachment.data) {
     const rawData = attachment.data;
     const cleanBase64 = rawData.replace(/^data:[a-zA-Z0-9.+/-]+;base64,/, '').trim();
     const isPdf = (attachment.mimeType && attachment.mimeType.toLowerCase().includes('pdf')) ||
@@ -437,7 +456,7 @@ function buildGeminiContents(
     });
   }
 
-  if (contents.length > 0 && contents[contents.length - 1].role === 'user' && (!attachment || !attachment.data)) {
+  if (contents.length > 0 && contents[contents.length - 1].role === 'user' && (!attachment || !attachment.data) && (!images || images.length === 0)) {
     contents[contents.length - 1].parts.push(...userParts);
   } else {
     contents.push({
@@ -540,14 +559,17 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
-  const { query, history, image, attachment, level, mode } = req.body || {};
+  const { query, history, image, attachment, images, level, mode, isDeepResearch } = req.body || {};
   const activeAttachment = attachment || (image && image.data ? { data: image.data, mimeType: image.mimeType || 'image/jpeg', name: 'image.jpg' } : undefined);
+  const effectiveImages = Array.isArray(images) && images.length > 0 ? images : undefined;
+  const effectiveMode = mode || (effectiveImages && effectiveImages.length > 0 ? 'answer_sheet' : undefined);
 
   let cleanQuery = typeof query === "string" ? query.trim() : "";
-  if (!cleanQuery && activeAttachment && activeAttachment.data) {
-    const isPdf = activeAttachment.mimeType?.includes('pdf') || activeAttachment.name?.toLowerCase().endsWith('.pdf');
-    if (mode === 'answer_sheet') {
-      cleanQuery = "कृपया यस संलग्न हस्तलिखित उत्तरपुस्तिकाको गहिरो परीक्षण गरी १० अंकमा प्राप्ताङ्क (Score), सबल पक्ष, कमजोरी र लोकसेवा/बैंकिङ परीक्षामा उच्चतम अंक प्राप्त गर्ने व्यावहारिक सुधार टिप्ससहित स्पष्ट मूल्याङ्कन प्रस्तुत गर्नुहोस्।";
+  if (!cleanQuery && (activeAttachment?.data || effectiveImages?.length)) {
+    const isPdf = activeAttachment?.mimeType?.includes('pdf') || activeAttachment?.name?.toLowerCase().endsWith('.pdf');
+    if (effectiveMode === 'answer_sheet') {
+      const pageCountText = effectiveImages?.length ? `${effectiveImages.length} वटा पानाहरू` : 'उत्तरपुस्तिका';
+      cleanQuery = `कृपया यस संलग्न हस्तलिखित ${pageCountText}को गहिरो परीक्षण गरी १० अंकमा प्राप्ताङ्क (Score), सबल पक्ष, कमजोरी र लोकसेवा/बैंकिङ परीक्षामा उच्चतम अंक प्राप्त गर्ने व्यावहारिक सुधार टिप्ससहित स्पष्ट मूल्याङ्कन प्रस्तुत गर्नुहोस्।`;
     } else {
       cleanQuery = isPdf
         ? "कृपया यस संलग्न PDF दस्तावेजको अध्ययन गरी यसको मुख्य सार तथा महत्वपूर्ण विषयवस्तुहरू स्पष्टसँग प्रस्तुत गर्नुहोस्।"
@@ -555,14 +577,14 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
     }
   }
 
-  if (!cleanQuery && (!activeAttachment || !activeAttachment.data)) {
+  if (!cleanQuery && (!activeAttachment || !activeAttachment.data) && !effectiveImages?.length) {
     res.write(`data: ${JSON.stringify({ error: "Query, PDF or image is required" })}\n\n`);
     res.write(`data: [DONE]\n\n`);
     return res.end();
   }
 
   const ai = getGeminiClient();
-  const effectiveSystemInstruction = getAiSystemInstruction(level, mode, cleanQuery);
+  const effectiveSystemInstruction = getAiSystemInstruction(level, effectiveMode, cleanQuery, Boolean(isDeepResearch));
 
   let isClientClosed = false;
   req.on("close", () => {
@@ -571,7 +593,7 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
 
   if (ai) {
     const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
-    const contents = buildGeminiContents(cleanQuery, history, activeAttachment);
+    const contents = buildGeminiContents(cleanQuery, history, activeAttachment, effectiveImages);
 
     for (const modelName of candidateModels) {
       if (isClientClosed) break;
@@ -621,7 +643,7 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
 
   // If Gemini models could not stream or client is still connected, provide rich pedagogical fallback
   if (!isClientClosed) {
-    const fallbackAnswer = getPedagogicalKnowledgeText(cleanQuery, mode);
+    const fallbackAnswer = getPedagogicalKnowledgeText(cleanQuery, effectiveMode);
     res.write(`data: ${JSON.stringify({ chunk: fallbackAnswer })}\n\n`);
     res.write(`data: [DONE]\n\n`);
     res.end();
@@ -631,14 +653,17 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
 // AI Study Assistant (AI साथी) non-streaming endpoint for unlimited queries
 app.post("/api/ai-assistant", async (req, res) => {
   try {
-    const { query, history, image, attachment, level, mode } = req.body || {};
+    const { query, history, image, attachment, images, level, mode, isDeepResearch } = req.body || {};
     const activeAttachment = attachment || (image && image.data ? { data: image.data, mimeType: image.mimeType || 'image/jpeg', name: 'image.jpg' } : undefined);
+    const effectiveImages = Array.isArray(images) && images.length > 0 ? images : undefined;
+    const effectiveMode = mode || (effectiveImages && effectiveImages.length > 0 ? 'answer_sheet' : undefined);
 
     let cleanQuery = typeof query === "string" ? query.trim() : "";
-    if (!cleanQuery && activeAttachment && activeAttachment.data) {
-      const isPdf = activeAttachment.mimeType?.includes('pdf') || activeAttachment.name?.toLowerCase().endsWith('.pdf');
-      if (mode === 'answer_sheet') {
-        cleanQuery = "कृपया यस संलग्न हस्तलिखित उत्तरपुस्तिकाको गहिरो परीक्षण गरी १० अंकमा प्राप्ताङ्क (Score), सबल पक्ष, कमजोरी र लोकसेवा/बैंकिङ परीक्षामा उच्चतम अंक प्राप्त गर्ने व्यावहारिक सुधार टिप्ससहित स्पष्ट मूल्याङ्कन प्रस्तुत गर्नुहोस्।";
+    if (!cleanQuery && (activeAttachment?.data || effectiveImages?.length)) {
+      const isPdf = activeAttachment?.mimeType?.includes('pdf') || activeAttachment?.name?.toLowerCase().endsWith('.pdf');
+      if (effectiveMode === 'answer_sheet') {
+        const pageCountText = effectiveImages?.length ? `${effectiveImages.length} वटा पानाहरू` : 'उत्तरपुस्तिका';
+        cleanQuery = `कृपया यस संलग्न हस्तलिखित ${pageCountText}को गहिरो परीक्षण गरी १० अंकमा प्राप्ताङ्क (Score), सबल पक्ष, कमजोरी र लोकसेवा/बैंकिङ परीक्षामा उच्चतम अंक प्राप्त गर्ने व्यावहारिक सुधार टिप्ससहित स्पष्ट मूल्याङ्कन प्रस्तुत गर्नुहोस्।`;
       } else {
         cleanQuery = isPdf
           ? "कृपया यस संलग्न PDF दस्तावेजको अध्ययन गरी यसको मुख्य सार तथा महत्वपूर्ण विषयवस्तुहरू स्पष्टसँग प्रस्तुत गर्नुहोस्।"
@@ -646,16 +671,16 @@ app.post("/api/ai-assistant", async (req, res) => {
       }
     }
 
-    if (!cleanQuery && (!activeAttachment || !activeAttachment.data)) {
+    if (!cleanQuery && (!activeAttachment || !activeAttachment.data) && !effectiveImages?.length) {
       return res.status(400).json({ error: "Query, PDF or image is required" });
     }
 
     const ai = getGeminiClient();
-    const effectiveSystemInstruction = getAiSystemInstruction(level, mode, cleanQuery);
+    const effectiveSystemInstruction = getAiSystemInstruction(level, effectiveMode, cleanQuery, Boolean(isDeepResearch));
 
     if (ai) {
       const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
-      const contents = buildGeminiContents(cleanQuery, history, activeAttachment);
+      const contents = buildGeminiContents(cleanQuery, history, activeAttachment, effectiveImages);
 
       for (const modelName of candidateModels) {
         try {
@@ -683,7 +708,7 @@ app.post("/api/ai-assistant", async (req, res) => {
       }
     }
 
-    const pedagogicalAnswer = getPedagogicalKnowledgeText(cleanQuery, mode);
+    const pedagogicalAnswer = getPedagogicalKnowledgeText(cleanQuery, effectiveMode);
     return res.json({
       success: true,
       source: "local-pedagogy",

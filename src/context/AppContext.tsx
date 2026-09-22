@@ -19,6 +19,7 @@ import { fetchOfficialChannelVideos } from '../services/youtubeService';
 import { AnalyticsService } from '../services/analyticsService';
 import { ActivityTrackingService } from '../services/activityTrackingService';
 import { FirebaseAuthService } from '../services/firebaseAuthService';
+import { SessionSecurityService } from '../services/sessionSecurityService';
 import { AppLanguage, TRANSLATIONS } from '../utils/translations';
 
 interface AppContextType {
@@ -449,6 +450,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode; initialUser?: Us
     }
     return true;
   }, [user]);
+
+  // 3-Hour Background Inactivity Auto-Logout Security Manager
+  useEffect(() => {
+    SessionSecurityService.init((reason: string) => {
+      const guest = StorageService.getGuestProfile();
+      setUserState(guest);
+      setIsLoggedInState(false);
+      openLoginModal(reason);
+      addToast('सुरक्षा सूचना: ३ घण्टा निष्क्रिय रहेकाले सत्र समाप्त भएको छ।', 'warning');
+    });
+
+    const handleSessionExpiredEvt = (e: Event) => {
+      const customEvt = e as CustomEvent<{ reason: string }>;
+      const reason = customEvt.detail?.reason || '३ घण्टा निष्क्रिय रहेकाले तपाईंको सत्र समाप्त भएको छ।';
+      const guest = StorageService.getGuestProfile();
+      setUserState(guest);
+      setIsLoggedInState(false);
+      openLoginModal(reason);
+    };
+
+    window.addEventListener('btn:session-expired', handleSessionExpiredEvt);
+    return () => {
+      window.removeEventListener('btn:session-expired', handleSessionExpiredEvt);
+    };
+  }, [openLoginModal, addToast]);
 
   // Dynamic Notification Real-Time Sync (Official YouTube uploads + Practice Sets)
   useEffect(() => {

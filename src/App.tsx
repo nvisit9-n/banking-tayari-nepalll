@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Dashboard } from './components/Dashboard';
+import { SplashScreen } from './components/common/SplashScreen';
 import { isOwnerAdmin } from './utils/sanitizer';
 
 function AdminRouteHandler() {
@@ -46,11 +47,39 @@ function AdminRouteHandler() {
   return null;
 }
 
+function MainApp() {
+  const [showSplash, setShowSplash] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      const shown = sessionStorage.getItem('btn_splash_shown');
+      return !shown;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleSplashComplete = () => {
+    setShowSplash(false);
+    try {
+      sessionStorage.setItem('btn_splash_shown', 'true');
+    } catch {}
+  };
+
+  return (
+    <>
+      {showSplash && (
+        <SplashScreen onComplete={handleSplashComplete} durationMs={2000} />
+      )}
+      <AdminRouteHandler />
+      <Dashboard />
+    </>
+  );
+}
+
 export function App() {
   return (
     <AppProvider>
-      <AdminRouteHandler />
-      <Dashboard />
+      <MainApp />
     </AppProvider>
   );
 }

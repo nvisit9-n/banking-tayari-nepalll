@@ -13,7 +13,10 @@ import {
   Key,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  Fingerprint,
+  ScanFace,
+  Clock
 } from 'lucide-react';
 import { UserProfile } from '../../types';
 import { DbService } from '../../services/dbService';
@@ -22,6 +25,8 @@ import { safeStorage } from '../../utils/safeHelpers';
 import { StorageService } from '../../services/storageService';
 import { FirebaseAuthService } from '../../services/firebaseAuthService';
 import { ActivityTrackingService } from '../../services/activityTrackingService';
+import { BiometricAuthService } from '../../services/biometricAuthService';
+import { SessionSecurityService } from '../../services/sessionSecurityService';
 import { useApp } from '../../context/AppContext';
 import { isOwnerAdmin, sanitizeUserProfile } from '../../utils/sanitizer';
 
@@ -68,10 +73,21 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<'info' | 'success' | 'error'>('info');
 
+  // Biometric / WebAuthn states
+  const [isBiometricSupported, setIsBiometricSupported] = useState<boolean>(true);
+  const [isBiometricAuthenticating, setIsBiometricAuthenticating] = useState<boolean>(false);
+  const [hasEnrolledBiometric, setHasEnrolledBiometric] = useState<boolean>(false);
+
   const [isVisible, setIsVisible] = useState<boolean>(isOpen);
 
   useEffect(() => {
     setIsVisible(isOpen);
+    if (isOpen) {
+      BiometricAuthService.isBiometricAvailable().then((res) => {
+        setIsBiometricSupported(res.supported);
+      });
+      setHasEnrolledBiometric(BiometricAuthService.hasEnrolledBiometric());
+    }
   }, [isOpen]);
 
   const callbacksRef = useRef({
@@ -265,6 +281,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         details: `प्रयोगकर्ता लगइन सम्पन्न (${enrichedProfile.authProvider || 'Google/Email'})`,
         metadata: { provider: enrichedProfile.authProvider }
       }).catch(() => {});
+
+      // 6. Reset 3-hour session security inactivity timer
+      SessionSecurityService.resetSessionTimer();
+
+      // 7. Enroll/link biometrics in background for instant 1-tap Fingerprint / Face ID login
+      BiometricAuthService.registerBiometrics(enrichedProfile).catch(() => {});
     } catch (err) {
       console.error('Authentication finalization error:', err);
       setShowAuthModal(false);
@@ -326,6 +348,31 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
       // Never dump raw Firebase error string to the UI
       setError('गुगल लगइन हुन सकेन। कृपया पुनः प्रयास गर्नुहोस् वा अतिथि मोड रोज्नुहोस्।');
+    }
+  };
+
+  /**
+   * 1-Tap Biometric Fingerprint / Face ID Sign-In Handler
+   */
+  const handleBiometricSignIn = async () => {
+    setError('');
+    setIsBiometricAuthenticating(true);
+
+    try {
+      const result = await BiometricAuthService.authenticateWithBiometrics();
+      if (result.success && result.profile) {
+        showToast('बायोमेट्रिक प्रमाणीकरण सफल भयो! स्वागत छ।', 'success');
+        finalizeAuthentication(result.profile);
+      } else {
+        const fallbackMsg = result.error || 'बायोमेट्रिक प्रमाणीकरण असफल भयो। कृपया पासवर्ड वा गुगलबाट लगइन गर्नुहोस्।';
+        setError(fallbackMsg);
+        showToast(fallbackMsg, 'error');
+      }
+    } catch (err: any) {
+      console.warn('Biometric sign-in error:', err);
+      setError('बायोमेट्रिक सेन्सर प्रमाणीकरण रद्द भयो वा त्रुटि भयो।');
+    } finally {
+      setIsBiometricAuthenticating(false);
     }
   };
 
@@ -566,7 +613,43 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </div>
         )}
 
+        {/* Subtle Security / Context Notification Banner (e.g. 3-Hour Session Timeout) */}
+        {customMessage && (
+          <div className="mb-3 px-3 py-2 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/60 text-sky-800 dark:text-sky-300 text-xs font-medium flex items-center gap-2">
+            <Clock className="w-4 h-4 text-sky-500 shrink-0" />
+            <span className="leading-relaxed">{customMessage}</span>
+          </div>
+        )}
+
         <div className="space-y-3.5">
+          {/* Quick Fingerprint / Face ID Biometric Login Button (Mobile App & Web 1-Tap Entry) */}
+          {activeTab === 'signin' && (
+            <button
+              type="button"
+              id="btn-biometric-auth-trigger"
+              disabled={isSigningIn || isBiometricAuthenticating}
+              onClick={handleBiometricSignIn}
+              className="w-full min-h-[44px] py-2 px-3.5 flex items-center justify-between bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-medium text-xs sm:text-sm rounded-xl border border-sky-400/30 shadow-2xs hover:shadow-xs transition active:scale-[0.99] cursor-pointer disabled:opacity-50"
+              title="Fingerprint वा Face ID मार्फत द्रुत १-ट्याप लगइन"
+            >
+              <div className="flex items-center gap-2.5">
+                {isBiometricAuthenticating ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin shrink-0" />
+                ) : (
+                  <Fingerprint className="w-4 h-4 text-sky-100 shrink-0" />
+                )}
+                <span>
+                  {isBiometricAuthenticating 
+                    ? 'सेन्सर प्रमाणीकरण हुँदैछ...' 
+                    : 'Fingerprint/Face ID मार्फत लगइन गर्नुहोस्'}
+                </span>
+              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white font-medium shrink-0">
+                १-ट्याप
+              </span>
+            </button>
+          )}
+
           {/* Prominent, clean "Google मार्फत जारी राख्नुहोस्" button */}
           {activeTab !== 'forgot' && (
             <>

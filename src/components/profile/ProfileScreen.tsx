@@ -21,7 +21,9 @@ import {
   Phone,
   Edit3,
   Camera,
-  LogOut
+  LogOut,
+  Fingerprint,
+  Clock
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { StorageService } from '../../services/storageService';
@@ -30,11 +32,29 @@ import { isUserAdmin } from '../../utils/sanitizer';
 import { MOCK_ACHIEVEMENTS } from '../../data/mockData';
 import { SocialCommunityCards } from '../common/SocialIcons';
 import { StudentRegistrationForm } from './StudentRegistrationForm';
+import { BiometricAuthService } from '../../services/biometricAuthService';
 
 export const ProfileScreen: React.FC = () => {
   const { user, refreshUser, theme, toggleTheme, setActiveTab, addToast, setIsProfileModalOpen, logout, openAdminWithSecurityCheck } = useApp();
   const [isResetConfirming, setIsResetConfirming] = useState<boolean>(false);
   const [isEditingProfile, setIsEditingProfile] = useState<boolean>(false);
+  const [isBioTesting, setIsBioTesting] = useState<boolean>(false);
+
+  const handleTestBiometrics = async () => {
+    setIsBioTesting(true);
+    try {
+      const res = await BiometricAuthService.authenticateWithBiometrics();
+      if (res.success) {
+        addToast('बायोमेट्रिक सेन्सर प्रमाणीकरण सफल भयो! (Fingerprint/Face ID Verified)', 'success');
+      } else {
+        addToast(res.error || 'बायोमेट्रिक प्रमाणीकरण हुन सकेन', 'warning');
+      }
+    } catch {
+      addToast('बायोमेट्रिक परीक्षण त्रुटि', 'error');
+    } finally {
+      setIsBioTesting(false);
+    }
+  };
 
   const handleConfirmReset = () => {
     StorageService.resetAllProgress();
@@ -398,6 +418,54 @@ export const ProfileScreen: React.FC = () => {
                 </>
               )}
             </button>
+          </div>
+
+          {/* Biometric Security Row */}
+          <div className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <Fingerprint className="w-4 h-4 text-sky-500" />
+                <p className="font-bold text-slate-800 dark:text-slate-200">
+                  बायोमेट्रिक लगइन सुरक्षा (Fingerprint / Face ID)
+                </p>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                  सक्रिय (Active)
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                मोबाइल तथा वेबमा १-ट्याप फिंगरप्रिन्ट वा फेस आइडी मार्फत तुरुन्तै सुरक्षित लगइन गर्नुहोस्
+              </p>
+            </div>
+            <button
+              onClick={handleTestBiometrics}
+              disabled={isBioTesting}
+              className="px-3.5 py-1.5 rounded-xl border border-sky-300 dark:border-sky-800 text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-950/50 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer disabled:opacity-50"
+            >
+              <Fingerprint className="w-3.5 h-3.5" />
+              <span>{isBioTesting ? 'जाँच्दैछ...' : 'सेन्सर परीक्षण'}</span>
+            </button>
+          </div>
+
+          {/* 3-Hour Inactivity Session Security Row */}
+          <div className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-500" />
+                <p className="font-bold text-slate-800 dark:text-slate-200">
+                  ३ घण्टा अटो-लगआउट सुरक्षा (3-Hour Session Timeout)
+                </p>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 dark:bg-sky-950 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800">
+                  १८० मिनेट
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                तपाईंको अध्ययन डाटाको सुरक्षाका लागि ३ घण्टा निष्क्रिय रहेपछि टोकन स्वतः सुरक्षित हुन्छ
+              </p>
+            </div>
+            <div className="text-xs text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 self-start sm:self-auto">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>सुरक्षित</span>
+            </div>
           </div>
 
           {/* Reset Progress Row */}

@@ -592,22 +592,34 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
   });
 
   if (ai) {
-    const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    // When Deep Research is active, utilize gemini-3.5-flash with Google Search Grounding for real-time statutory & economic facts
+    const candidateModels = isDeepResearch 
+      ? ["gemini-3.5-flash", "gemini-3.8-flash"] 
+      : ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
     const contents = buildGeminiContents(cleanQuery, history, activeAttachment, effectiveImages);
 
     for (const modelName of candidateModels) {
       if (isClientClosed) break;
       try {
+        const streamConfig: any = {
+          systemInstruction: effectiveSystemInstruction,
+          temperature: 0.3
+        };
+
+        // Enable Google Search Grounding when Deep Research is activated
+        if (isDeepResearch) {
+          streamConfig.tools = [{ googleSearch: {} }];
+        }
+
         const stream = await ai.models.generateContentStream({
           model: modelName,
           contents,
-          config: {
-            systemInstruction: effectiveSystemInstruction,
-            temperature: 0.3
-          }
+          config: streamConfig
         });
 
         let streamedCount = 0;
+        let groundings: Array<{ title?: string; uri?: string }> = [];
+
         for await (const chunk of stream) {
           if (isClientClosed) break;
 
@@ -621,6 +633,17 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
             }
           }
 
+          // Extract Google Search Grounding metadata if provided by Gemini
+          const candidate = (chunk as any).candidates?.[0];
+          const searchChunks = candidate?.groundingMetadata?.groundingChunks;
+          if (Array.isArray(searchChunks) && searchChunks.length > 0) {
+            for (const sc of searchChunks) {
+              if (sc.web?.uri && !groundings.some(g => g.uri === sc.web.uri)) {
+                groundings.push({ title: sc.web.title || 'Official Source', uri: sc.web.uri });
+              }
+            }
+          }
+
           if (chunkText) {
             streamedCount++;
             res.write(`data: ${JSON.stringify({ chunk: chunkText })}\n\n`);
@@ -628,6 +651,13 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
               (res as any).flush();
             }
           }
+        }
+
+        // If Google Search citations were extracted, stream them neatly at the end
+        if (groundings.length > 0 && !isClientClosed) {
+          const sourcesMarkdown = `\n\n---\n**🔍 प्रमाणित स्रोत तथा आधिकारिक लिङ्कहरू (Google Search Grounded Citations):**\n` +
+            groundings.map(g => `- [${g.title}](${g.uri})`).join('\n');
+          res.write(`data: ${JSON.stringify({ chunk: sourcesMarkdown })}\n\n`);
         }
 
         if (streamedCount > 0 && !isClientClosed) {
@@ -647,6 +677,54 @@ app.post("/api/ai-assistant-stream", async (req, res) => {
     res.write(`data: ${JSON.stringify({ chunk: fallbackAnswer })}\n\n`);
     res.write(`data: [DONE]\n\n`);
     res.end();
+  }
+});
+
+// Audio Transcription Endpoint using gemini-3.5-transcribe
+app.post("/api/transcribe-audio", async (req, res) => {
+  try {
+    const { audioData, mimeType, language } = req.body || {};
+    if (!audioData) {
+      return res.status(400).json({ error: "Audio data is required for transcription" });
+    }
+
+    const cleanBase64 = String(audioData).replace(/^data:[a-zA-Z0-9.+/-]+;base64,/, '').trim();
+    const resolvedMime = mimeType || "audio/webm";
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.status(503).json({ error: "Gemini client not initialized on server" });
+    }
+
+    const audioPart = {
+      inlineData: {
+        mimeType: resolvedMime,
+        data: cleanBase64,
+      },
+    };
+
+    const targetLang = language === 'en-US' || language === 'en' ? 'English' : 'Nepali';
+    const transcriptionPrompt = `Transcribe the spoken audio verbatim in ${targetLang}.
+Return ONLY the exact transcribed text words without any conversational greetings, markdown formatting, preamble, quotation marks, or meta notes.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-transcribe",
+      contents: {
+        parts: [
+          audioPart,
+          { text: transcriptionPrompt }
+        ]
+      },
+      config: {
+        temperature: 0.1
+      }
+    });
+
+    const transcribedText = response.text?.trim() || "";
+    return res.json({ success: true, text: transcribedText });
+  } catch (err: any) {
+    console.error("Gemini 3.5 audio transcription error:", err);
+    return res.status(500).json({ error: err.message || "Failed to transcribe audio" });
   }
 });
 
@@ -679,26 +757,51 @@ app.post("/api/ai-assistant", async (req, res) => {
     const effectiveSystemInstruction = getAiSystemInstruction(level, effectiveMode, cleanQuery, Boolean(isDeepResearch));
 
     if (ai) {
-      const candidateModels = ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+      const candidateModels = isDeepResearch 
+        ? ["gemini-3.5-flash", "gemini-3.8-flash"] 
+        : ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
       const contents = buildGeminiContents(cleanQuery, history, activeAttachment, effectiveImages);
 
       for (const modelName of candidateModels) {
         try {
+          const reqConfig: any = {
+            systemInstruction: effectiveSystemInstruction,
+            temperature: 0.3
+          };
+
+          if (isDeepResearch) {
+            reqConfig.tools = [{ googleSearch: {} }];
+          }
+
           const response = await ai.models.generateContent({
             model: modelName,
             contents,
-            config: {
-              systemInstruction: effectiveSystemInstruction,
-              temperature: 0.3
-            },
+            config: reqConfig,
           });
 
           if (response.text && response.text.trim()) {
+            let answer = response.text.trim();
+            // Append Google Search Grounding sources if available
+            const candidate = (response as any).candidates?.[0];
+            const searchChunks = candidate?.groundingMetadata?.groundingChunks;
+            if (Array.isArray(searchChunks) && searchChunks.length > 0) {
+              const groundings: Array<{ title?: string; uri?: string }> = [];
+              for (const sc of searchChunks) {
+                if (sc.web?.uri && !groundings.some(g => g.uri === sc.web.uri)) {
+                  groundings.push({ title: sc.web.title || 'Official Source', uri: sc.web.uri });
+                }
+              }
+              if (groundings.length > 0) {
+                answer += `\n\n---\n**🔍 प्रमाणित स्रोत तथा आधिकारिक लिङ्कहरू (Google Search Grounded Citations):**\n` +
+                  groundings.map(g => `- [${g.title}](${g.uri})`).join('\n');
+              }
+            }
+
             return res.json({
               success: true,
               source: "gemini",
               model: modelName,
-              answer: response.text.trim()
+              answer
             });
           }
         } catch (geminiErr: any) {

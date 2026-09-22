@@ -27,6 +27,12 @@ service cloud.firestore {
     match /exam_scores/{scoreId} {
       allow read, write: if true;
     }
+    match /chat_sessions/{sessionId} {
+      allow read, write: if true;
+    }
+    match /test_evaluations/{evalId} {
+      allow read, write: if true;
+    }
 
     // Analytics & visitor logs
     match /analytics/{docId} {

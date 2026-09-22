@@ -2,15 +2,16 @@ import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getFirestore, Firestore } from 'firebase/firestore';
 import { getDatabase, Database } from 'firebase/database';
+import appletConfig from '../firebase-applet-config.json';
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyC6bANa5Cxw0v55fqs_bdV9vUcN_dVlqW4",
-  authDomain: "banking-tayari-nepal.firebaseapp.com",
-  projectId: "banking-tayari-nepal",
-  storageBucket: "banking-tayari-nepal.firebasestorage.app",
-  messagingSenderId: "389241557756",
-  appId: "1:389241557756:web:740ccb16e263838ea9fd79",
-  measurementId: "G-3YT3FCML6L"
+  apiKey: appletConfig.apiKey || "AIzaSyAll7c8qr6tnPwEZjQ3JDUCS5IUrCX1wGo",
+  authDomain: appletConfig.authDomain || "plasma-tribute-kf6jr.firebaseapp.com",
+  projectId: appletConfig.projectId || "plasma-tribute-kf6jr",
+  storageBucket: appletConfig.storageBucket || "plasma-tribute-kf6jr.firebasestorage.app",
+  messagingSenderId: appletConfig.messagingSenderId || "159405978608",
+  appId: appletConfig.appId || "1:159405978608:web:d377bb91b6b8deb9dc6335",
+  measurementId: appletConfig.measurementId || ""
 };
 
 export const app: FirebaseApp = getApps().length > 0 

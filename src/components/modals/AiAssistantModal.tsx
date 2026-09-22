@@ -23,6 +23,8 @@ import {
   Download,
   Compass,
   Eye,
+  LogIn,
+  Loader2,
   Image as ImageIcon
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
@@ -39,8 +41,10 @@ import {
 } from '../../services/aiChatSessionService';
 import { 
   executeAiQueryWithAutoRetry, 
-  getOfflineKnowledgeFallback 
+  getOfflineKnowledgeFallback,
+  transcribeAudioWithGemini 
 } from '../../services/geminiClientService';
+import { FirebaseAuthService } from '../../services/firebaseAuthService';
 import { EvaluationCard } from '../ai/EvaluationCard';
 
 interface AttachedFile {
@@ -117,11 +121,16 @@ export const AiAssistantModal: React.FC = () => {
     messageId: null
   });
 
-  // Web Speech API (Voice Input - STT)
-  const [isListening, setIsListening] = useState(false);
+  // Audio Transcription STT (gemini-3.5-transcribe) - Fixes speech duplication
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [speechLanguage, setSpeechLanguage] = useState<'ne-NP' | 'en-US'>('ne-NP');
   const [speechNotice, setSpeechNotice] = useState<string | null>(null);
-  const recognitionRef = useRef<any>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<any>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -137,11 +146,24 @@ export const AiAssistantModal: React.FC = () => {
     };
   }, []);
 
-  // Load chat sessions from Firebase RTDB and LocalStorage when modal opens
+  // Clean up recording stream on unmount
+  useEffect(() => {
+    return () => {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+  // Load chat sessions from Firestore and LocalStorage when modal opens
   useEffect(() => {
     if (isAiModalOpen) {
-      const activeUid = user && !user.isGuest ? (user.authUid || user.id) : 'guest';
-      AiChatSessionService.getUserSessions(activeUid).then((loaded) => {
+      const currentUid = user && !user.isGuest ? (user.authUid || user.id) : 'guest';
+      AiChatSessionService.getUserSessions(currentUid).then((loaded) => {
         if (loaded && loaded.length > 0) {
           setSessions(loaded);
           setCurrentSession(loaded[0]);
@@ -151,11 +173,17 @@ export const AiAssistantModal: React.FC = () => {
           const fresh = AiChatSessionService.createNewSession('level4-5', 'general');
           setSessions([fresh]);
           setCurrentSession(fresh);
-          AiChatSessionService.saveSession(fresh, activeUid);
+          AiChatSessionService.saveSession(fresh, currentUid);
         }
       });
     } else {
       nepaliTts.stop();
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try { mediaRecorderRef.current.stop(); } catch { /* ignore */ }
+      }
+      setIsRecording(false);
+      setIsTranscribing(false);
     }
   }, [isAiModalOpen, user]);
 
@@ -168,19 +196,6 @@ export const AiAssistantModal: React.FC = () => {
       scrollToBottom();
     }
   }, [currentSession?.messages, isTyping, isAiModalOpen]);
-
-  // Clean up speech recognition on unmount
-  useEffect(() => {
-    return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch {
-          // ignore
-        }
-      }
-    };
-  }, []);
 
   if (!isAiModalOpen) return null;
 
@@ -242,61 +257,89 @@ export const AiAssistantModal: React.FC = () => {
     await AiChatSessionService.deleteSession(sessionId, activeUid);
   };
 
-  // Web Speech Voice Input Toggle
-  const handleToggleSpeech = () => {
-    if (isListening) {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+  // STT Engine Overhaul: Gemini 3.5 Transcribe replacing Web Speech API to completely fix repetition
+  const handleToggleSpeech = async () => {
+    if (isRecording) {
+      // User tapped mic to stop recording
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
       }
-      setIsListening(false);
-      setSpeechNotice(null);
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      setIsRecording(false);
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      setSpeechNotice('तपाईंको ब्राउजरमा Voice Input सुविधा उपलब्ध छैन (Chrome/Edge प्रयोग गर्नुहोस्)।');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setSpeechNotice('तपाईंको ब्राउजरमा माइक्रोफोन सुविधा उपलब्ध छैन।');
       setTimeout(() => setSpeechNotice(null), 4000);
       return;
     }
 
     try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = speechLanguage;
-      recognition.interimResults = true;
-      recognition.continuous = false;
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const preferredMime = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
 
-      recognition.onstart = () => {
-        setIsListening(true);
-        setSpeechNotice(speechLanguage === 'ne-NP' ? 'सुन्दैछ... नेपालीमा स्पष्ट बोल्नुहोस्' : 'Listening... speak clearly');
-      };
+      const mediaRecorder = new MediaRecorder(stream, preferredMime ? { mimeType: preferredMime } : undefined);
+      audioChunksRef.current = [];
 
-      recognition.onresult = (event: any) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        if (transcript) {
-          setInputQuery(prev => (prev ? `${prev} ${transcript.trim()}` : transcript.trim()));
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
         }
       };
 
-      recognition.onerror = (event: any) => {
-        setIsListening(false);
-        setSpeechNotice(`आवाज चिन्न सकिएन (${event.error || 'पुनः प्रयास गर्नुहोस्'})`);
-        setTimeout(() => setSpeechNotice(null), 3000);
+      mediaRecorder.onstop = async () => {
+        // Release audio hardware tracks
+        stream.getTracks().forEach(t => t.stop());
+
+        if (audioChunksRef.current.length === 0) {
+          setSpeechNotice('कुनै आवाज प्राप्त भएन।');
+          setTimeout(() => setSpeechNotice(null), 3000);
+          return;
+        }
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: preferredMime || 'audio/webm' });
+        setIsTranscribing(true);
+        setSpeechNotice('✨ AI ट्रान्सक्राइब गर्दैछ (gemini-3.5-transcribe)...');
+
+        try {
+          const transcribedText = await transcribeAudioWithGemini(audioBlob, speechLanguage);
+          if (transcribedText && transcribedText.trim()) {
+            // Clean 1-to-1 capture without repeated buffer concatenation
+            setInputQuery(prev => {
+              const prevTrimmed = (prev || '').trim();
+              return prevTrimmed ? `${prevTrimmed} ${transcribedText.trim()}` : transcribedText.trim();
+            });
+            setSpeechNotice(`✅ आवाज रूपान्तरण भयो`);
+            setTimeout(() => setSpeechNotice(null), 2500);
+          } else {
+            setSpeechNotice('आवाज स्पष्ट भएन, कृपया फेरि बोल्नुहोस्।');
+            setTimeout(() => setSpeechNotice(null), 3000);
+          }
+        } catch (sttErr: any) {
+          console.error('Audio transcription error:', sttErr);
+          setSpeechNotice('ट्रान्सक्राइब गर्न सकिएन। पुनः प्रयास गर्नुहोस्।');
+          setTimeout(() => setSpeechNotice(null), 3500);
+        } finally {
+          setIsTranscribing(false);
+        }
       };
 
-      recognition.onend = () => {
-        setIsListening(false);
-        setSpeechNotice(null);
-      };
+      mediaRecorder.start(250);
+      mediaRecorderRef.current = mediaRecorder;
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      setSpeechNotice(speechLanguage === 'ne-NP' ? '🔴 आवाज रेकर्ड हुँदैछ... स्पष्ट बोल्नुहोस् (बन्द गर्न फेरि थिच्नुहोस्)' : '🔴 Recording... speak clearly (click to finish)');
 
-      recognitionRef.current = recognition;
-      recognition.start();
-    } catch {
-      setIsListening(false);
-      setSpeechNotice('आवाज सुरु गर्न सकिएन। कृपया माइक्रोफोन अनुमति दिनुहोस्।');
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(s => s + 1);
+      }, 1000);
+
+    } catch (micErr) {
+      console.warn('Microphone access denied:', micErr);
+      setSpeechNotice('माइक्रोफोन अनुमति अस्वीकार गरियो। कृपया माइक अनुमति दिनुहोस्।');
       setTimeout(() => setSpeechNotice(null), 4000);
     }
   };
@@ -635,8 +678,47 @@ export const AiAssistantModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Clean Action Controls: TTS Stop & Close */}
+          {/* Clean Action Controls: Auth Sync, TTS Stop & Close */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* User Account / Google Sign-in to persist to Firestore */}
+            {user && !user.isGuest ? (
+              <div 
+                className="hidden xs:flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg bg-slate-800/80 border border-slate-700/60 text-slate-300"
+                title="Firestore क्लाउड डाटाबेस सिंक सक्रिय"
+              >
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt="" className="w-4 h-4 rounded-full" />
+                ) : (
+                  <div className="w-4 h-4 rounded-full bg-emerald-500/30 flex items-center justify-center text-[10px] text-emerald-400 font-bold">
+                    {(user.displayName || user.name || 'U')[0].toUpperCase()}
+                  </div>
+                )}
+                <span className="max-w-[80px] sm:max-w-[120px] truncate text-[11px] font-semibold">
+                  {user.displayName || user.name || 'विद्यार्थी'}
+                </span>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400" title="Firestore सिंक" />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const profile = await FirebaseAuthService.signInWithGoogle();
+                    if (profile && addToast) {
+                      addToast(`स्वागत छ, ${profile.displayName || profile.name}! च्याट इतिहास Firestore मा सुरक्षित सिंक भयो।`, 'success');
+                    }
+                  } catch (e: any) {
+                    if (addToast) addToast('Google लगइन गर्न सकिएन।', 'error');
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/40 transition cursor-pointer"
+                title="Google मार्फत लगइन गरी च्याट र उत्तरपुस्तिका प्रगति सुरक्षित राख्नुहोस्"
+              >
+                <LogIn className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Google लगइन</span>
+              </button>
+            )}
+
             {/* Global TTS Stop if currently playing */}
             {ttsState.isPlaying && (
               <button
@@ -1027,17 +1109,36 @@ export const AiAssistantModal: React.FC = () => {
 
             {/* Speech Notice Banner */}
             {speechNotice && (
-              <div className="px-4 py-2 bg-rose-950/60 border-t border-rose-900/60 text-rose-300 text-xs font-semibold flex items-center justify-between shrink-0 animate-fadeIn">
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+              <div className={`px-4 py-2 text-xs font-semibold flex items-center justify-between shrink-0 animate-fadeIn ${
+                isRecording 
+                  ? 'bg-rose-950/70 border-t border-rose-800 text-rose-200' 
+                  : isTranscribing 
+                  ? 'bg-sky-950/70 border-t border-sky-800 text-sky-200' 
+                  : 'bg-slate-900 border-t border-slate-800 text-slate-300'
+              }`}>
+                <div className="flex items-center gap-2 truncate">
+                  {isRecording ? (
+                    <>
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                      <span className="font-mono text-rose-400 font-bold">
+                        {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:
+                        {(recordingSeconds % 60).toString().padStart(2, '0')}
+                      </span>
+                    </>
+                  ) : isTranscribing ? (
+                    <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  )}
                   <span className="truncate">{speechNotice}</span>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSpeechLanguage(prev => prev === 'ne-NP' ? 'en-US' : 'ne-NP')}
-                  className="text-[10px] bg-slate-800 px-2 py-0.5 rounded border border-rose-800 text-rose-300 font-bold shrink-0 ml-2"
+                  className="text-[10px] bg-slate-800 px-2.5 py-0.5 rounded-lg border border-slate-700 text-slate-200 font-bold shrink-0 ml-2 hover:bg-slate-700 transition"
+                  title="भाषा परिवर्तन गर्नुहोस्"
                 >
-                  भाषा: {speechLanguage === 'ne-NP' ? 'नेपाली' : 'English'}
+                  भाषा: {speechLanguage === 'ne-NP' ? 'नेपाली (ne-NP)' : 'English (en-US)'}
                 </button>
               </div>
             )}
@@ -1162,20 +1263,34 @@ export const AiAssistantModal: React.FC = () => {
                 <Paperclip className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
               </button>
 
-              {/* Voice Input (Speech-to-Text) Button */}
+              {/* Voice Input (Speech-to-Text with gemini-3.5-transcribe) Button */}
               <button
                 type="button"
                 onClick={handleToggleSpeech}
-                disabled={isTyping}
+                disabled={isTyping || isTranscribing}
                 className={`w-10 h-10 min-w-[40px] flex items-center justify-center rounded-xl border transition disabled:opacity-40 shrink-0 cursor-pointer shadow-xs ${
-                  isListening
+                  isRecording
                     ? 'bg-rose-500 text-white border-rose-600 animate-pulse ring-2 ring-rose-400 shadow-md'
+                    : isTranscribing
+                    ? 'bg-sky-500/20 text-sky-400 border-sky-500/60 ring-1 ring-sky-400 animate-pulse'
                     : 'border-slate-700 bg-slate-800/80 text-slate-300 hover:text-emerald-400 hover:border-emerald-500'
                 }`}
-                title={isListening ? "आवाज रेकर्डिङ बन्द गर्नुहोस्" : "बोलेर प्रश्न सोध्नुहोस् (Speech to Text - नेपाली/English)"}
+                title={
+                  isRecording
+                    ? `आवाज रेकर्डिङ भइरहेको छ (${recordingSeconds}s)... बन्द गर्न थिच्नुहोस्`
+                    : isTranscribing
+                    ? "AI ट्रान्सक्राइब गर्दैछ (gemini-3.5-transcribe)..."
+                    : "बोलेर प्रश्न सोध्नुहोस् (gemini-3.5-transcribe नेपाली/English STT)"
+                }
                 aria-label="बोलेर प्रश्न सोध्नुहोस्"
               >
-                {isListening ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />}
+                {isRecording ? (
+                  <MicOff className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                ) : isTranscribing ? (
+                  <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 text-sky-400 animate-spin" />
+                ) : (
+                  <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+                )}
               </button>
 
               {/* Discrete, Elegant Deep Research Toggle Switch */}

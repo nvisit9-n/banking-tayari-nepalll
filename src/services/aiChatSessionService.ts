@@ -1,5 +1,15 @@
-import { ref, set, get, remove, onValue, off } from 'firebase/database';
-import { rtdb, auth } from '../firebase';
+import { ref, set, get, remove } from 'firebase/database';
+import { 
+  doc, 
+  setDoc, 
+  getDocs, 
+  collection, 
+  deleteDoc, 
+  query, 
+  orderBy, 
+  limit 
+} from 'firebase/firestore';
+import { rtdb, db, auth } from '../firebase';
 import { safeStorage } from '../utils/safeHelpers';
 
 export type ExamLevel = 'level4-5' | 'level6-8' | 'level9-10';
@@ -137,7 +147,7 @@ export class AiChatSessionService {
   }
 
   /**
-   * Get all chat sessions for a user (from LocalStorage and RTDB)
+   * Get all chat sessions for a user (from LocalStorage, Firestore and RTDB)
    */
   static async getUserSessions(uid?: string | null): Promise<AiChatSession[]> {
     const userKey = this.resolveUid(uid);
@@ -157,8 +167,46 @@ export class AiChatSessionService {
       }
     }
 
-    // 2. If authenticated and RTDB available, fetch from Firebase Realtime Database
-    if (rtdb && userKey !== 'guest') {
+    // 2. If authenticated, fetch from Cloud Firestore database
+    if (db && userKey !== 'guest') {
+      try {
+        const sessionsCol = collection(db, 'users', userKey, 'chat_sessions');
+        const q = query(sessionsCol, orderBy('updatedAt', 'desc'), limit(30));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          const firestoreSessions: AiChatSession[] = [];
+          querySnapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            if (data && data.id) {
+              const msgs = Array.isArray(data.messages) ? data.messages : [];
+              firestoreSessions.push({
+                id: data.id,
+                title: data.title || 'अध्ययन सत्र',
+                createdAt: data.createdAt || Date.now(),
+                updatedAt: data.updatedAt || Date.now(),
+                level: data.level || 'level4-5',
+                mode: data.mode || 'general',
+                messageCount: msgs.length,
+                messages: msgs
+              });
+            }
+          });
+
+          if (firestoreSessions.length > 0) {
+            firestoreSessions.sort((a, b) => b.updatedAt - a.updatedAt);
+            sessions = firestoreSessions;
+            safeStorage.setItem(localKey, JSON.stringify(sessions));
+            return sessions;
+          }
+        }
+      } catch (fsErr) {
+        console.warn('Firestore chat sessions fetch notice:', fsErr);
+      }
+    }
+
+    // 3. Fallback to Firebase Realtime Database if available
+    if (rtdb && userKey !== 'guest' && sessions.length === 0) {
       try {
         const dbRef = ref(rtdb, `users/${userKey}/chat_sessions`);
         const snapshot = await get(dbRef);
@@ -169,7 +217,6 @@ export class AiChatSessionService {
             Object.keys(val).forEach(key => {
               const sessionData = val[key];
               if (sessionData && sessionData.id) {
-                // Ensure messages is an array
                 const msgs = Array.isArray(sessionData.messages) 
                   ? sessionData.messages 
                   : (sessionData.messages ? Object.values(sessionData.messages) : []);
@@ -183,10 +230,8 @@ export class AiChatSessionService {
           }
 
           if (rtdbSessions.length > 0) {
-            // Sort most recently updated first
             rtdbSessions.sort((a, b) => b.updatedAt - a.updatedAt);
             sessions = rtdbSessions;
-            // Update local cache
             safeStorage.setItem(localKey, JSON.stringify(sessions));
           }
         }
@@ -199,7 +244,7 @@ export class AiChatSessionService {
   }
 
   /**
-   * Save or update a single session (both to LocalStorage and Firebase RTDB)
+   * Save or update a single session (to LocalStorage, Firestore and RTDB)
    */
   static async saveSession(session: AiChatSession, uid?: string | null): Promise<void> {
     const userKey = this.resolveUid(uid);
@@ -222,33 +267,75 @@ export class AiChatSessionService {
       console.warn('Could not save session locally:', localErr);
     }
 
-    // 2. Sync to Firebase Realtime Database: users/{uid}/chat_sessions/{sessionId}
+    // Prepare sanitized messages (avoid storing large raw image base64 strings in persistent DB)
+    const sanitizedMessages = session.messages.map(m => ({
+      id: m.id,
+      sender: m.sender,
+      text: m.text,
+      timestamp: m.timestamp || Date.now(),
+      isDeepResearch: Boolean(m.isDeepResearch),
+      pdfAttachment: m.pdfAttachment || null,
+      image: m.image && m.image.startsWith('data:') && m.image.length > 40000 
+        ? undefined 
+        : m.image,
+      evaluationData: m.evaluationData || null
+    }));
+
+    const sessionPayload = {
+      id: session.id,
+      userId: userKey,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      level: session.level,
+      mode: session.mode || 'general',
+      messageCount: sanitizedMessages.length,
+      messages: sanitizedMessages,
+      savedAt: new Date().toISOString()
+    };
+
+    // 2. Sync to Cloud Firestore: users/{uid}/chat_sessions/{sessionId}
+    if (db && userKey !== 'guest') {
+      try {
+        const userSessionDoc = doc(db, 'users', userKey, 'chat_sessions', session.id);
+        await setDoc(userSessionDoc, sessionPayload, { merge: true });
+
+        // If the session has evaluation results, also persist in user and global test evaluations
+        const evalMessage = session.messages.find(m => m.evaluationData && m.evaluationData.score !== undefined);
+        if (evalMessage?.evaluationData) {
+          const evalPayload = {
+            id: session.id,
+            userId: userKey,
+            sessionTitle: session.title,
+            score: evalMessage.evaluationData.score,
+            maxScore: evalMessage.evaluationData.maxScore || 10,
+            vocabularyRank: (evalMessage.evaluationData as any).vocabularyRank || 'मध्यम',
+            strengths: evalMessage.evaluationData.strengths || [],
+            weaknesses: evalMessage.evaluationData.weaknesses || [],
+            suggestions: evalMessage.evaluationData.suggestions || [],
+            sheetCount: evalMessage.evaluationData.sheetCount || 1,
+            timestamp: new Date().toISOString(),
+            examLevel: session.level
+          };
+
+          // Save student test evaluation log
+          const evalDoc = doc(db, 'users', userKey, 'evaluations', session.id);
+          await setDoc(evalDoc, evalPayload, { merge: true });
+
+          // Also save in global test_evaluations table
+          const globalEvalDoc = doc(db, 'test_evaluations', session.id);
+          await setDoc(globalEvalDoc, evalPayload, { merge: true });
+        }
+      } catch (fsErr) {
+        console.warn('Firestore save chat session notice:', fsErr);
+      }
+    }
+
+    // 3. Sync to Firebase Realtime Database as redundant backup
     if (rtdb && userKey !== 'guest') {
       try {
         const sessionRef = ref(rtdb, `users/${userKey}/chat_sessions/${session.id}`);
-        // Strip large base64 preview strings before saving to RTDB to prevent bandwidth bloat
-        const sanitizedMessages = session.messages.map(m => ({
-          id: m.id,
-          sender: m.sender,
-          text: m.text,
-          timestamp: m.timestamp || Date.now(),
-          pdfAttachment: m.pdfAttachment || null,
-          image: m.image && m.image.startsWith('data:') && m.image.length > 50000 
-            ? undefined // Skip storing multi-megabyte base64 in RTDB history
-            : m.image,
-          evaluationData: m.evaluationData || null
-        }));
-
-        await set(sessionRef, {
-          id: session.id,
-          title: session.title,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
-          level: session.level,
-          mode: session.mode || 'general',
-          messageCount: sanitizedMessages.length,
-          messages: sanitizedMessages
-        });
+        await set(sessionRef, sessionPayload);
       } catch (rtdbErr) {
         console.warn('Firebase RTDB save chat session notice:', rtdbErr);
       }
@@ -271,7 +358,17 @@ export class AiChatSessionService {
       console.warn('Local session removal notice:', e);
     }
 
-    // 2. Remove from RTDB
+    // 2. Remove from Firestore
+    if (db && userKey !== 'guest') {
+      try {
+        const sessionDoc = doc(db, 'users', userKey, 'chat_sessions', sessionId);
+        await deleteDoc(sessionDoc);
+      } catch (fsErr) {
+        console.warn('Firestore delete chat session notice:', fsErr);
+      }
+    }
+
+    // 3. Remove from RTDB
     if (rtdb && userKey !== 'guest') {
       try {
         const sessionRef = ref(rtdb, `users/${userKey}/chat_sessions/${sessionId}`);

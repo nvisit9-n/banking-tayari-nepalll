@@ -578,3 +578,39 @@ Return clean JSON matching:
 
   throw new Error('Notes API unavailable');
 }
+
+/**
+ * High-fidelity Audio Transcription using gemini-3.5-transcribe
+ * Replaces Web Speech API to eliminate word duplication bugs and provide 1-to-1 Nepali STT
+ */
+export async function transcribeAudioWithGemini(audioBlob: Blob, language: string = 'ne-NP'): Promise<string> {
+  const reader = new FileReader();
+  const base64Promise = new Promise<string>((resolve, reject) => {
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      const base64Clean = result.split(',')[1] || result;
+      resolve(base64Clean);
+    };
+    reader.onerror = reject;
+  });
+  reader.readAsDataURL(audioBlob);
+  const base64Data = await base64Promise;
+
+  const res = await fetch('/api/transcribe-audio', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      audioData: base64Data,
+      mimeType: audioBlob.type || 'audio/webm',
+      language
+    })
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.error || `Audio transcription failed (${res.status})`);
+  }
+
+  const data = await res.json();
+  return (data.text || '').trim();
+}
